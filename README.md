@@ -20,11 +20,13 @@ uv run pytest
 ## Current baseline modules
 
 - technical price feature engineering
+- causal 200-day SMA regime flag
 - binary triple-barrier labeling aligned to next-open execution
 - purged walk-forward split generation
 - walk-forward model training with fold-level backtest metrics
 - separate `train` and `test` pipeline stages
 - yfinance fetch script for daily OHLCV data
+- standalone metrics/debug script for saved runs
 
 ## Fetch Data
 
@@ -61,6 +63,21 @@ Evaluate saved fold models and write reports:
 ```bash
 uv run --extra research algotrader-test --input-csv data/interim/spy_daily.csv --model-dir models/latest
 ```
+
+## Inspect Metrics
+
+Compute the debugging metrics for a saved run:
+
+```bash
+uv run --extra research algotrader-metrics --input-csv data/interim/spy_daily.csv --model-dir models/latest --reports-dir reports/latest
+```
+
+This prints:
+
+- label distribution
+- B1 / B2 / timeout resolution mix
+- chronological per-fold Sharpe values
+- averaged feature importances when the backend supports them
 
 ## Combined Run
 

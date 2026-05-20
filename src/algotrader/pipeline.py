@@ -40,9 +40,9 @@ from algotrader.training.xgboost_model import XGBoostConfig, train_xgboost_class
 
 
 DEFAULT_SPLIT_CONFIG = PurgedWalkForwardConfig(
-    train_size=126,
-    test_size=63,
-    step_size=63,
+    train_size=504,
+    test_size=252,
+    step_size=252,
     embargo_size=10,
     max_label_horizon=10,
 )

@@ -13,6 +13,7 @@ DEFAULT_FEATURE_COLUMNS = [
     "return_1d",
     "return_5d",
     "volatility_20d",
+    "price_above_sma_200",
     "ATR_14",
     "RSI_14",
     "MACD_line",

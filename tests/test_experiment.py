@@ -10,7 +10,7 @@ from algotrader.training.walk_forward import PurgedWalkForwardConfig
 from algotrader.training.xgboost_model import XGBoostConfig
 
 
-def _synthetic_price_frame(periods: int = 320) -> pd.DataFrame:
+def _synthetic_price_frame(periods: int = 520) -> pd.DataFrame:
     index = pd.date_range("2023-01-01", periods=periods, freq="D", tz="UTC")
     base = 100 + np.linspace(0, 25, periods)
     wave = 5 * np.sin(np.arange(periods) / 8)

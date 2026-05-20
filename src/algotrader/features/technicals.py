@@ -64,6 +64,8 @@ def build_price_features(frame: pd.DataFrame) -> pd.DataFrame:
     features["return_1d"] = close.pct_change(1)
     features["return_5d"] = close.pct_change(5)
     features["volatility_20d"] = features["return_1d"].rolling(window=20, min_periods=20).std()
+    sma_200 = close.rolling(window=200, min_periods=200).mean()
+    features["price_above_sma_200"] = np.where(sma_200.notna(), (close > sma_200).astype(float), np.nan)
     features["ATR_14"] = _atr(features, period=14)
     features["RSI_14"] = _rsi(close, period=14)
 

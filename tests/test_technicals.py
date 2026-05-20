@@ -7,14 +7,14 @@ from algotrader.features import build_price_features
 
 
 def test_build_price_features_adds_expected_columns_and_respects_warmup() -> None:
-    index = pd.date_range("2024-01-01", periods=40, freq="D", tz="UTC")
+    index = pd.date_range("2024-01-01", periods=260, freq="D", tz="UTC")
     frame = pd.DataFrame(
         {
-            "open": np.linspace(100, 139, 40),
-            "high": np.linspace(101, 140, 40),
-            "low": np.linspace(99, 138, 40),
-            "close": np.linspace(100, 139, 40),
-            "volume": np.linspace(1_000_000, 1_390_000, 40),
+            "open": np.linspace(100, 359, 260),
+            "high": np.linspace(101, 360, 260),
+            "low": np.linspace(99, 358, 260),
+            "close": np.linspace(100, 359, 260),
+            "volume": np.linspace(1_000_000, 3_590_000, 260),
         },
         index=index,
     )
@@ -25,6 +25,7 @@ def test_build_price_features_adds_expected_columns_and_respects_warmup() -> Non
         "return_1d",
         "return_5d",
         "volatility_20d",
+        "price_above_sma_200",
         "ATR_14",
         "RSI_14",
         "MACD_line",
@@ -40,4 +41,6 @@ def test_build_price_features_adds_expected_columns_and_respects_warmup() -> Non
     assert pd.isna(features.iloc[0]["return_1d"])
     assert pd.isna(features.iloc[12]["ATR_14"])
     assert not pd.isna(features.iloc[13]["ATR_14"])
+    assert pd.isna(features.iloc[198]["price_above_sma_200"])
+    assert features.iloc[199]["price_above_sma_200"] == 1.0
     assert not pd.isna(features.iloc[-1]["MACD_line"])

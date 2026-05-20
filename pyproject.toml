@@ -30,6 +30,7 @@ algotrader-run = "algotrader.pipeline:main"
 algotrader-train = "algotrader.pipeline:train_main"
 algotrader-test = "algotrader.pipeline:test_main"
 algotrader-fetch-yf = "algotrader.pipeline:fetch_yfinance_main"
+algotrader-metrics = "algotrader.metrics:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

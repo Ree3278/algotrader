@@ -7,14 +7,14 @@ from algotrader.training import build_training_dataset
 
 
 def test_build_training_dataset_returns_aligned_trainable_rows() -> None:
-    index = pd.date_range("2024-01-01", periods=60, freq="D", tz="UTC")
+    index = pd.date_range("2024-01-01", periods=260, freq="D", tz="UTC")
     price_frame = pd.DataFrame(
         {
-            "open": np.linspace(100, 159, 60),
-            "high": np.linspace(101, 160, 60),
-            "low": np.linspace(99, 158, 60),
-            "close": np.linspace(100, 159, 60),
-            "volume": np.linspace(1_000_000, 1_590_000, 60),
+            "open": np.linspace(100, 359, 260),
+            "high": np.linspace(101, 360, 260),
+            "low": np.linspace(99, 358, 260),
+            "close": np.linspace(100, 359, 260),
+            "volume": np.linspace(1_000_000, 3_590_000, 260),
         },
         index=index,
     )
@@ -26,6 +26,7 @@ def test_build_training_dataset_returns_aligned_trainable_rows() -> None:
     assert dataset.y.isin([0, 1]).all()
     assert dataset.data.index.min() > price_frame.index.min()
     assert dataset.data["entry_index"].min() > dataset.data.index.min()
+    assert "price_above_sma_200" in dataset.feature_columns
 
 
 def test_build_training_dataset_drops_unlabeled_tail_rows() -> None:

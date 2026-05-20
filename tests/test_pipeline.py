@@ -7,13 +7,14 @@ import pandas as pd
 
 from algotrader.backtest import BacktestConfig
 from algotrader.ingestion.storage import save_ohlcv_csv
+from algotrader.metrics import compute_debug_metrics
 from algotrader.pipeline import TestPipelineConfig, TrainPipelineConfig, run_pipeline, run_test_pipeline, run_training_pipeline
 from algotrader.training.experiment import WalkForwardExperimentConfig
 from algotrader.training.walk_forward import PurgedWalkForwardConfig
 from algotrader.training.xgboost_model import XGBoostConfig
 
 
-def _synthetic_price_frame(periods: int = 320) -> pd.DataFrame:
+def _synthetic_price_frame(periods: int = 520) -> pd.DataFrame:
     index = pd.date_range("2023-01-01", periods=periods, freq="D", tz="UTC")
     base = 100 + np.linspace(0, 25, periods)
     wave = 4 * np.sin(np.arange(periods) / 9)
@@ -118,3 +119,33 @@ def test_run_pipeline_wrapper_still_executes_train_plus_test(tmp_path) -> None:
     )
 
     assert result.summary["fold_count"] >= 1
+
+
+def test_compute_debug_metrics_reads_saved_artifacts(tmp_path) -> None:
+    price_frame = _synthetic_price_frame()
+    input_csv = tmp_path / "spy_daily.csv"
+    model_dir = tmp_path / "models"
+    output_dir = tmp_path / "reports"
+    save_ohlcv_csv(price_frame, input_csv)
+
+    run_pipeline(
+        TestPipelineConfig(
+            symbol="SPY",
+            input_csv=input_csv,
+            model_dir=model_dir,
+            output_dir=output_dir,
+            experiment_config=_experiment_config(),
+        )
+    )
+
+    metrics = compute_debug_metrics(
+        input_csv=input_csv,
+        model_dir=model_dir,
+        reports_dir=output_dir,
+    )
+
+    assert metrics["dataset_rows"] > 0
+    assert metrics["fold_count"] >= 1
+    assert "label_distribution_pct" in metrics
+    assert "hit_reason_pct" in metrics
+    assert len(metrics["fold_sharpes"]) == metrics["fold_count"]
