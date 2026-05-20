@@ -35,6 +35,25 @@ def _synthetic_price_frame(periods: int = 520) -> pd.DataFrame:
     )
 
 
+def _synthetic_vix_frame(periods: int = 520) -> pd.DataFrame:
+    index = pd.date_range("2023-01-01", periods=periods, freq="D", tz="UTC")
+    close = 20 + 4 * np.sin(np.arange(periods) / 11) + 0.5 * np.cos(np.arange(periods) / 3)
+    return pd.DataFrame(
+        {
+            "symbol": "^VIX",
+            "open": close,
+            "high": close + 0.5,
+            "low": close - 0.5,
+            "close": close,
+            "adjusted_close": close,
+            "volume": np.zeros(periods),
+            "dividend_amount": np.zeros(periods),
+            "split_coefficient": np.ones(periods),
+        },
+        index=index,
+    )
+
+
 def _experiment_config() -> WalkForwardExperimentConfig:
     return WalkForwardExperimentConfig(
         split_config=PurgedWalkForwardConfig(
@@ -64,20 +83,25 @@ def _experiment_config() -> WalkForwardExperimentConfig:
 
 def test_train_then_test_pipeline_from_local_csv_writes_artifacts(tmp_path) -> None:
     price_frame = _synthetic_price_frame()
+    vix_frame = _synthetic_vix_frame()
     input_csv = tmp_path / "spy_daily.csv"
+    vix_csv = tmp_path / "vix_daily.csv"
     model_dir = tmp_path / "models"
     output_dir = tmp_path / "reports"
     save_ohlcv_csv(price_frame, input_csv)
+    save_ohlcv_csv(vix_frame, vix_csv)
 
     train_config = TrainPipelineConfig(
         symbol="SPY",
         input_csv=input_csv,
+        vix_input_csv=vix_csv,
         model_dir=model_dir,
         experiment_config=_experiment_config(),
     )
     test_config = TestPipelineConfig(
         symbol="SPY",
         input_csv=input_csv,
+        vix_input_csv=vix_csv,
         model_dir=model_dir,
         output_dir=output_dir,
         experiment_config=_experiment_config(),
@@ -105,13 +129,17 @@ def test_train_then_test_pipeline_from_local_csv_writes_artifacts(tmp_path) -> N
 
 def test_run_pipeline_wrapper_still_executes_train_plus_test(tmp_path) -> None:
     price_frame = _synthetic_price_frame()
+    vix_frame = _synthetic_vix_frame()
     input_csv = tmp_path / "spy_daily.csv"
+    vix_csv = tmp_path / "vix_daily.csv"
     save_ohlcv_csv(price_frame, input_csv)
+    save_ohlcv_csv(vix_frame, vix_csv)
 
     result = run_pipeline(
         TestPipelineConfig(
             symbol="SPY",
             input_csv=input_csv,
+            vix_input_csv=vix_csv,
             model_dir=tmp_path / "models",
             output_dir=tmp_path / "reports",
             experiment_config=_experiment_config(),
@@ -123,15 +151,19 @@ def test_run_pipeline_wrapper_still_executes_train_plus_test(tmp_path) -> None:
 
 def test_compute_debug_metrics_reads_saved_artifacts(tmp_path) -> None:
     price_frame = _synthetic_price_frame()
+    vix_frame = _synthetic_vix_frame()
     input_csv = tmp_path / "spy_daily.csv"
+    vix_csv = tmp_path / "vix_daily.csv"
     model_dir = tmp_path / "models"
     output_dir = tmp_path / "reports"
     save_ohlcv_csv(price_frame, input_csv)
+    save_ohlcv_csv(vix_frame, vix_csv)
 
     run_pipeline(
         TestPipelineConfig(
             symbol="SPY",
             input_csv=input_csv,
+            vix_input_csv=vix_csv,
             model_dir=model_dir,
             output_dir=output_dir,
             experiment_config=_experiment_config(),
@@ -140,6 +172,7 @@ def test_compute_debug_metrics_reads_saved_artifacts(tmp_path) -> None:
 
     metrics = compute_debug_metrics(
         input_csv=input_csv,
+        vix_csv=vix_csv,
         model_dir=model_dir,
         reports_dir=output_dir,
     )

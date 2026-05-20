@@ -27,6 +27,7 @@ uv run pytest
 - separate `train` and `test` pipeline stages
 - yfinance fetch script for daily OHLCV data
 - standalone metrics/debug script for saved runs
+- optional VIX regime feature via local CSV or automatic `^VIX` fetch
 
 ## Fetch Data
 
@@ -36,12 +37,20 @@ Download normalized daily OHLCV with `yfinance`:
 uv run algotrader-fetch-yf --symbol SPY --output-csv data/interim/spy_daily.csv
 ```
 
+This also writes normalized VIX data by default to `data/interim/vix_daily.csv`.
+
 ## Train
 
 Train fold models from local CSV:
 
 ```bash
 uv run --extra research algotrader-train --input-csv data/interim/spy_daily.csv
+```
+
+If `data/interim/vix_daily.csv` exists beside the SPY CSV, it is picked up automatically. You can also pass it explicitly:
+
+```bash
+uv run --extra research algotrader-train --input-csv data/interim/spy_daily.csv --vix-csv data/interim/vix_daily.csv
 ```
 
 Train directly from `yfinance` without a pre-existing CSV:
@@ -64,12 +73,20 @@ Evaluate saved fold models and write reports:
 uv run --extra research algotrader-test --input-csv data/interim/spy_daily.csv --model-dir models/latest
 ```
 
+If the saved model was trained with VIX features, provide the same VIX CSV or keep `vix_daily.csv` beside the SPY file.
+
 ## Inspect Metrics
 
 Compute the debugging metrics for a saved run:
 
 ```bash
 uv run --extra research algotrader-metrics --input-csv data/interim/spy_daily.csv --model-dir models/latest --reports-dir reports/latest
+```
+
+If the run used VIX features:
+
+```bash
+uv run --extra research algotrader-metrics --input-csv data/interim/spy_daily.csv --vix-csv data/interim/vix_daily.csv --model-dir models/latest --reports-dir reports/latest
 ```
 
 This prints:

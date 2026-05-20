@@ -52,6 +52,7 @@ DEFAULT_SPLIT_CONFIG = PurgedWalkForwardConfig(
 class PipelineConfig:
     symbol: str = "SPY"
     input_csv: Path | None = None
+    vix_input_csv: Path | None = None
     fetch_yfinance: bool = False
     yfinance_period: str = "max"
     yfinance_start: str | None = None
@@ -85,6 +86,7 @@ TestPipelineConfig.__test__ = False
 class TrainingRunResult:
     dataset: pd.DataFrame
     price_frame: pd.DataFrame
+    vix_frame: pd.DataFrame | None
     manifest: dict[str, Any]
     fold_manifest: pd.DataFrame
     artifact_paths: dict[str, Path]
@@ -94,6 +96,7 @@ class TrainingRunResult:
 class TestRunResult:
     dataset: pd.DataFrame
     price_frame: pd.DataFrame
+    vix_frame: pd.DataFrame | None
     fold_summaries: pd.DataFrame
     test_predictions: pd.DataFrame
     summary: dict[str, Any]
@@ -105,9 +108,26 @@ def _iso_or_none(value: pd.Timestamp | None) -> str | None:
     return value.isoformat() if value is not None and not pd.isna(value) else None
 
 
-def _load_or_fetch_price_frame(config: PipelineConfig) -> pd.DataFrame:
+def _default_vix_filename() -> str:
+    return "vix_daily.csv"
+
+
+def _resolve_vix_input_csv(config: PipelineConfig) -> Path | None:
+    if config.vix_input_csv is not None:
+        return config.vix_input_csv
     if config.input_csv is not None:
-        return load_ohlcv_csv(config.input_csv)
+        sibling_vix = config.input_csv.parent / _default_vix_filename()
+        if sibling_vix.exists():
+            return sibling_vix
+    return None
+
+
+def _load_or_fetch_frames(config: PipelineConfig) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+    if config.input_csv is not None:
+        price_frame = load_ohlcv_csv(config.input_csv)
+        resolved_vix_csv = _resolve_vix_input_csv(config)
+        vix_frame = load_ohlcv_csv(resolved_vix_csv) if resolved_vix_csv is not None else None
+        return price_frame, vix_frame
 
     if config.fetch_yfinance:
         price_frame = fetch_yfinance_daily(
@@ -116,9 +136,17 @@ def _load_or_fetch_price_frame(config: PipelineConfig) -> pd.DataFrame:
             start=config.yfinance_start,
             end=config.yfinance_end,
         )
+        vix_frame = fetch_yfinance_daily(
+            "^VIX",
+            period=config.yfinance_period,
+            start=config.yfinance_start,
+            end=config.yfinance_end,
+        )
         normalized_path = config.normalized_data_dir / f"{config.symbol.lower()}_daily.csv"
+        vix_path = config.normalized_data_dir / _default_vix_filename()
         save_ohlcv_csv(price_frame, normalized_path)
-        return price_frame
+        save_ohlcv_csv(vix_frame, vix_path)
+        return price_frame, vix_frame
 
     if config.fetch_alpha_vantage:
         api_key = config.alpha_vantage_key or os.getenv("ALPHA_VANTAGE_API_KEY")
@@ -137,13 +165,15 @@ def _load_or_fetch_price_frame(config: PipelineConfig) -> pd.DataFrame:
         normalized_path = config.normalized_data_dir / f"{config.symbol.lower()}_daily.csv"
         save_json(payload, raw_path)
         save_ohlcv_csv(price_frame, normalized_path)
-        return price_frame
+        resolved_vix_csv = _resolve_vix_input_csv(config)
+        vix_frame = load_ohlcv_csv(resolved_vix_csv) if resolved_vix_csv is not None else None
+        return price_frame, vix_frame
 
     raise ValueError("Provide --input-csv or enable --fetch-yfinance / --fetch-alpha-vantage")
 
 
-def _build_dataset(price_frame: pd.DataFrame) -> TrainingDataset:
-    dataset = build_training_dataset(price_frame)
+def _build_dataset(price_frame: pd.DataFrame, vix_frame: pd.DataFrame | None = None) -> TrainingDataset:
+    dataset = build_training_dataset(price_frame, vix_frame=vix_frame)
     if dataset.data.empty:
         raise ValueError("Training dataset is empty after feature warmup and label construction")
     return dataset
@@ -152,8 +182,8 @@ def _build_dataset(price_frame: pd.DataFrame) -> TrainingDataset:
 def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
     """Train fold models and persist artifact manifests."""
 
-    price_frame = _load_or_fetch_price_frame(config)
-    dataset = _build_dataset(price_frame)
+    price_frame, vix_frame = _load_or_fetch_frames(config)
+    dataset = _build_dataset(price_frame, vix_frame=vix_frame)
 
     config.model_dir.mkdir(parents=True, exist_ok=True)
     fold_records: list[dict[str, Any]] = []
@@ -231,6 +261,7 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
         "feature_columns": dataset.feature_columns,
         "target_column": dataset.target_column,
         "input_csv": str(config.input_csv) if config.input_csv is not None else None,
+        "vix_input_csv": str(config.vix_input_csv) if config.vix_input_csv is not None else None,
         "experiment_config": json.loads(json.dumps(asdict(config.experiment_config), default=str)),
     }
     artifact_paths = save_training_manifest(
@@ -242,6 +273,7 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
     return TrainingRunResult(
         dataset=dataset.data,
         price_frame=price_frame,
+        vix_frame=vix_frame,
         manifest=manifest,
         fold_manifest=fold_manifest,
         artifact_paths=artifact_paths,
@@ -251,9 +283,15 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
 def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
     """Load trained fold models, score test windows, and write reports."""
 
-    price_frame = _load_or_fetch_price_frame(config)
-    dataset = _build_dataset(price_frame)
+    price_frame, vix_frame = _load_or_fetch_frames(config)
+    dataset = _build_dataset(price_frame, vix_frame=vix_frame)
     manifest, fold_manifest = load_training_manifest(config.model_dir)
+    missing_features = [feature for feature in manifest["feature_columns"] if feature not in dataset.data.columns]
+    if missing_features:
+        raise ValueError(
+            "Dataset is missing required features from the trained manifest: "
+            f"{missing_features}. Supply the matching VIX input if the model was trained with VIX features."
+        )
 
     prediction_frames: list[pd.DataFrame] = []
     fold_summaries: list[dict[str, Any]] = []
@@ -322,6 +360,7 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
     return TestRunResult(
         dataset=dataset.data,
         price_frame=price_frame,
+        vix_frame=vix_frame,
         fold_summaries=result.fold_summaries,
         test_predictions=result.test_predictions,
         summary=summary,
@@ -336,6 +375,7 @@ def run_pipeline(config: TestPipelineConfig) -> TestRunResult:
     train_config = TrainPipelineConfig(
         symbol=config.symbol,
         input_csv=config.input_csv,
+        vix_input_csv=config.vix_input_csv,
         fetch_yfinance=config.fetch_yfinance,
         yfinance_period=config.yfinance_period,
         yfinance_start=config.yfinance_start,
@@ -352,17 +392,31 @@ def run_pipeline(config: TestPipelineConfig) -> TestRunResult:
     return run_test_pipeline(config)
 
 
-def run_fetch_yfinance(symbol: str, output_csv: Path, *, period: str = "max", start: str | None = None, end: str | None = None) -> Path:
+def run_fetch_yfinance(
+    symbol: str,
+    output_csv: Path,
+    *,
+    vix_output_csv: Path | None = None,
+    period: str = "max",
+    start: str | None = None,
+    end: str | None = None,
+) -> tuple[Path, Path | None]:
     """Download daily OHLCV from yfinance and save it as normalized CSV."""
 
     price_frame = fetch_yfinance_daily(symbol, period=period, start=start, end=end)
     save_ohlcv_csv(price_frame, output_csv)
-    return output_csv
+    saved_vix_path = None
+    if vix_output_csv is not None:
+        vix_frame = fetch_yfinance_daily("^VIX", period=period, start=start, end=end)
+        save_ohlcv_csv(vix_frame, vix_output_csv)
+        saved_vix_path = vix_output_csv
+    return output_csv, saved_vix_path
 
 
 def _add_shared_data_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--symbol", default="SPY", help="Ticker symbol to analyze")
     parser.add_argument("--input-csv", type=Path, help="Path to normalized OHLCV CSV")
+    parser.add_argument("--vix-csv", type=Path, help="Optional path to normalized VIX CSV")
     parser.add_argument("--fetch-yfinance", action="store_true", help="Fetch data from yfinance before running")
     parser.add_argument("--yf-period", default="max", help="yfinance period, e.g. max, 10y, 5y")
     parser.add_argument("--yf-start", help="Optional yfinance start date, YYYY-MM-DD")
@@ -411,6 +465,7 @@ def build_fetch_yfinance_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Fetch and normalize daily OHLCV data from yfinance.")
     parser.add_argument("--symbol", default="SPY", help="Ticker symbol to download")
     parser.add_argument("--output-csv", type=Path, default=Path("data/interim/spy_daily.csv"), help="Output CSV path")
+    parser.add_argument("--vix-output-csv", type=Path, default=Path(f"data/interim/{_default_vix_filename()}"), help="Optional output CSV path for normalized VIX data")
     parser.add_argument("--period", default="max", help="yfinance period, e.g. max, 10y, 5y")
     parser.add_argument("--start", help="Optional yfinance start date, YYYY-MM-DD")
     parser.add_argument("--end", help="Optional yfinance end date, YYYY-MM-DD")
@@ -421,6 +476,7 @@ def _train_config_from_args(args: argparse.Namespace) -> TrainPipelineConfig:
     return TrainPipelineConfig(
         symbol=args.symbol,
         input_csv=args.input_csv,
+        vix_input_csv=args.vix_csv,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
         yfinance_start=args.yf_start,
@@ -436,6 +492,7 @@ def _test_config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
     return TestPipelineConfig(
         symbol=args.symbol,
         input_csv=args.input_csv,
+        vix_input_csv=args.vix_csv,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
         yfinance_start=args.yf_start,
@@ -466,8 +523,17 @@ def test_main() -> None:
 def fetch_yfinance_main() -> None:
     parser = build_fetch_yfinance_arg_parser()
     args = parser.parse_args()
-    output = run_fetch_yfinance(args.symbol, args.output_csv, period=args.period, start=args.start, end=args.end)
+    output, vix_output = run_fetch_yfinance(
+        args.symbol,
+        args.output_csv,
+        vix_output_csv=args.vix_output_csv,
+        period=args.period,
+        start=args.start,
+        end=args.end,
+    )
     print(f"saved_csv={output}")
+    if vix_output is not None:
+        print(f"saved_vix_csv={vix_output}")
 
 
 def main() -> None:

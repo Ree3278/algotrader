@@ -15,6 +15,7 @@ def test_build_price_features_adds_expected_columns_and_respects_warmup() -> Non
             "low": np.linspace(99, 358, 260),
             "close": np.linspace(100, 359, 260),
             "volume": np.linspace(1_000_000, 3_590_000, 260),
+            "vix_close": 20 + 5 * np.sin(np.arange(260) / 10),
         },
         index=index,
     )
@@ -26,6 +27,7 @@ def test_build_price_features_adds_expected_columns_and_respects_warmup() -> Non
         "return_5d",
         "volatility_20d",
         "price_above_sma_200",
+        "vix_zscore_60d",
         "ATR_14",
         "RSI_14",
         "MACD_line",
@@ -43,4 +45,6 @@ def test_build_price_features_adds_expected_columns_and_respects_warmup() -> Non
     assert not pd.isna(features.iloc[13]["ATR_14"])
     assert pd.isna(features.iloc[198]["price_above_sma_200"])
     assert features.iloc[199]["price_above_sma_200"] == 1.0
+    assert pd.isna(features.iloc[58]["vix_zscore_60d"])
+    assert not pd.isna(features.iloc[59]["vix_zscore_60d"])
     assert not pd.isna(features.iloc[-1]["MACD_line"])

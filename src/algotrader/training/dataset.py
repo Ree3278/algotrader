@@ -25,6 +25,10 @@ DEFAULT_FEATURE_COLUMNS = [
     "volume_zscore_20d",
 ]
 
+OPTIONAL_FEATURE_COLUMNS = [
+    "vix_zscore_60d",
+]
+
 
 @dataclass(frozen=True)
 class TrainingDataset:
@@ -44,14 +48,26 @@ class TrainingDataset:
 def build_training_dataset(
     price_frame: pd.DataFrame,
     *,
+    vix_frame: pd.DataFrame | None = None,
     label_config: TripleBarrierConfig | None = None,
     feature_columns: list[str] | None = None,
 ) -> TrainingDataset:
     """Build the baseline trainable dataset from raw daily bars."""
 
-    features = build_price_features(price_frame)
+    base_frame = price_frame.copy()
+    if vix_frame is not None:
+        if "close" not in vix_frame.columns:
+            raise ValueError("vix_frame must contain a 'close' column")
+        aligned_vix = vix_frame["close"].reindex(base_frame.index).ffill()
+        base_frame["vix_close"] = aligned_vix
+
+    features = build_price_features(base_frame)
     labels = generate_long_flat_labels(features, config=label_config)
-    selected_feature_columns = feature_columns or DEFAULT_FEATURE_COLUMNS
+    if feature_columns is not None:
+        selected_feature_columns = feature_columns
+    else:
+        selected_feature_columns = list(DEFAULT_FEATURE_COLUMNS)
+        selected_feature_columns.extend(column for column in OPTIONAL_FEATURE_COLUMNS if column in features.columns)
 
     dataset = pd.concat(
         [

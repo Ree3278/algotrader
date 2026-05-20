@@ -22,13 +22,15 @@ def _rounded_pct_map(series: pd.Series) -> dict[str, float]:
 def compute_debug_metrics(
     *,
     input_csv: str | Path,
+    vix_csv: str | Path | None = None,
     model_dir: str | Path = "models/latest",
     reports_dir: str | Path = "reports/latest",
 ) -> dict[str, Any]:
     """Compute label mix, fold Sharpe chronology, and feature importances."""
 
     price_frame = load_ohlcv_csv(input_csv)
-    dataset = build_training_dataset(price_frame)
+    vix_frame = load_ohlcv_csv(vix_csv) if vix_csv is not None else None
+    dataset = build_training_dataset(price_frame, vix_frame=vix_frame)
     manifest, fold_manifest = load_training_manifest(model_dir)
     reports_path = Path(reports_dir)
     fold_summaries = pd.read_csv(reports_path / "fold_summaries.csv")
@@ -105,6 +107,7 @@ def compute_debug_metrics(
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Compute debugging metrics for a trained algotrader run.")
     parser.add_argument("--input-csv", type=Path, required=True, help="Path to normalized OHLCV CSV")
+    parser.add_argument("--vix-csv", type=Path, help="Optional path to normalized VIX CSV")
     parser.add_argument("--model-dir", type=Path, default=Path("models/latest"), help="Directory containing saved fold models")
     parser.add_argument("--reports-dir", type=Path, default=Path("reports/latest"), help="Directory containing fold summary reports")
     return parser
@@ -114,6 +117,7 @@ def main() -> None:
     args = build_arg_parser().parse_args()
     metrics = compute_debug_metrics(
         input_csv=args.input_csv,
+        vix_csv=args.vix_csv,
         model_dir=args.model_dir,
         reports_dir=args.reports_dir,
     )
