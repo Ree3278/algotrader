@@ -1,7 +1,39 @@
 [project]
 name = "algotrader"
 version = "0.1.0"
-description = "Add your description here"
+description = "Price-only SPY daily ML trading baseline"
 readme = "README.md"
-requires-python = ">=3.10"
-dependencies = []
+requires-python = "==3.10.*"
+dependencies = [
+    "numpy>=2.2,<3",
+    "pandas>=2.2,<3",
+]
+
+[project.optional-dependencies]
+research = [
+    "matplotlib>=3.10,<4",
+    "scikit-learn>=1.6,<2",
+    "xgboost>=2.1,<3",
+]
+dev = [
+    "pytest>=8.3,<9",
+    "ruff>=0.11,<0.12",
+]
+
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
