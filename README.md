@@ -23,9 +23,46 @@ uv run pytest
 - binary triple-barrier labeling aligned to next-open execution
 - purged walk-forward split generation
 - walk-forward model training with fold-level backtest metrics
-- runnable pipeline CLI that writes reports
+- separate `train` and `test` pipeline stages
+- yfinance fetch script for daily OHLCV data
 
-## Run The Pipeline
+## Fetch Data
+
+Download normalized daily OHLCV with `yfinance`:
+
+```bash
+uv run algotrader-fetch-yf --symbol SPY --output-csv data/interim/spy_daily.csv
+```
+
+## Train
+
+Train fold models from local CSV:
+
+```bash
+uv run --extra research algotrader-train --input-csv data/interim/spy_daily.csv
+```
+
+Train directly from `yfinance` without a pre-existing CSV:
+
+```bash
+uv run --extra research algotrader-train --fetch-yfinance --symbol SPY
+```
+
+Training artifacts are written under `models/latest/` by default:
+
+- `manifest.json`
+- `fold_manifest.csv`
+- `fold_XXX.pkl`
+
+## Test
+
+Evaluate saved fold models and write reports:
+
+```bash
+uv run --extra research algotrader-test --input-csv data/interim/spy_daily.csv --model-dir models/latest
+```
+
+## Combined Run
 
 Local CSV:
 

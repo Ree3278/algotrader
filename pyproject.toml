@@ -7,6 +7,7 @@ requires-python = "==3.10.*"
 dependencies = [
     "numpy>=2.2,<3",
     "pandas>=2.2,<3",
+    "yfinance>=0.2.54,<0.3",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +27,9 @@ build-backend = "setuptools.build_meta"
 
 [project.scripts]
 algotrader-run = "algotrader.pipeline:main"
+algotrader-train = "algotrader.pipeline:train_main"
+algotrader-test = "algotrader.pipeline:test_main"
+algotrader-fetch-yf = "algotrader.pipeline:fetch_yfinance_main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

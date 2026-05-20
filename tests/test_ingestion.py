@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import json
+import pandas as pd
 
-from algotrader.ingestion import normalize_daily_adjusted
+from algotrader.ingestion import normalize_daily_adjusted, normalize_yfinance_ohlcv
 
 
 def test_normalize_daily_adjusted_sorts_rows_and_parses_numeric_fields() -> None:
@@ -49,3 +49,26 @@ def test_normalize_daily_adjusted_raises_on_rate_limit_payload() -> None:
         assert "frequency exceeded" in str(exc)
     else:
         raise AssertionError("Expected ValueError for rate-limited payload")
+
+
+def test_normalize_yfinance_ohlcv_maps_standard_columns() -> None:
+    frame = pd.DataFrame(
+        {
+            "Open": [100.0, 101.0],
+            "High": [101.0, 102.0],
+            "Low": [99.0, 100.0],
+            "Close": [100.5, 101.5],
+            "Adj Close": [100.4, 101.4],
+            "Volume": [1_000_000, 1_100_000],
+            "Dividends": [0.0, 0.0],
+            "Stock Splits": [0.0, 0.0],
+        },
+        index=pd.to_datetime(["2024-01-02", "2024-01-03"]),
+    )
+
+    normalized = normalize_yfinance_ohlcv(frame, symbol="SPY")
+
+    assert normalized.index[0].isoformat() == "2024-01-02T00:00:00+00:00"
+    assert normalized.iloc[0]["symbol"] == "SPY"
+    assert normalized.iloc[1]["adjusted_close"] == 101.4
+    assert normalized.iloc[0]["split_coefficient"] == 1.0
