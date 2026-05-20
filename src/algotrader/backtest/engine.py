@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
 import pandas as pd
 
 
@@ -77,6 +79,7 @@ def run_long_flat_backtest(
 
     results["equity_curve"] = (1 + results["net_return"]).cumprod()
     results["benchmark_return"] = (opens.shift(-1) / opens - 1).reindex(results["entry_index"]).to_numpy()
+    results["benchmark_equity_curve"] = (1 + results["benchmark_return"]).cumprod()
     return results
 
 
@@ -86,17 +89,49 @@ def summarize_backtest(results: pd.DataFrame) -> dict[str, float]:
     if results.empty:
         return {
             "total_return": 0.0,
+            "benchmark_total_return": 0.0,
+            "cagr": 0.0,
+            "sharpe": 0.0,
+            "max_drawdown": 0.0,
+            "profit_factor": 0.0,
+            "win_rate": 0.0,
             "trade_count": 0.0,
             "exposure": 0.0,
             "turnover": 0.0,
         }
 
+    net_returns = results["net_return"]
     total_return = float(results["equity_curve"].iloc[-1] - 1)
+    benchmark_total_return = float(results["benchmark_equity_curve"].iloc[-1] - 1)
+    periods = len(results)
+    cagr = float(results["equity_curve"].iloc[-1] ** (252 / periods) - 1) if periods > 0 else 0.0
+    volatility = float(net_returns.std(ddof=0))
+    sharpe = float(np.sqrt(252) * net_returns.mean() / volatility) if volatility > 0 else 0.0
+    running_peak = results["equity_curve"].cummax()
+    drawdown = (results["equity_curve"] / running_peak) - 1
+    max_drawdown = float(drawdown.min())
+    positive_returns = net_returns[net_returns > 0].sum()
+    negative_returns = net_returns[net_returns < 0].sum()
+    if negative_returns < 0:
+        profit_factor = float(positive_returns / abs(negative_returns))
+    elif positive_returns > 0:
+        profit_factor = float("inf")
+    else:
+        profit_factor = 0.0
+
+    active_periods = results[results["target_position"] > 0]["net_return"]
+    win_rate = float((active_periods > 0).mean()) if not active_periods.empty else 0.0
     trade_count = float((results["turnover"] > 0).sum())
     exposure = float(results["target_position"].mean())
     turnover = float(results["turnover"].sum())
     return {
         "total_return": total_return,
+        "benchmark_total_return": benchmark_total_return,
+        "cagr": cagr,
+        "sharpe": sharpe,
+        "max_drawdown": max_drawdown,
+        "profit_factor": profit_factor,
+        "win_rate": win_rate,
         "trade_count": trade_count,
         "exposure": exposure,
         "turnover": turnover,
