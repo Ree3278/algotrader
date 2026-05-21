@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from algotrader.ingestion import normalize_daily_adjusted, normalize_yfinance_ohlcv
+from algotrader.ingestion import normalize_daily_adjusted, normalize_news_sentiment, normalize_yfinance_ohlcv
 
 
 def test_normalize_daily_adjusted_sorts_rows_and_parses_numeric_fields() -> None:
@@ -72,3 +72,30 @@ def test_normalize_yfinance_ohlcv_maps_standard_columns() -> None:
     assert normalized.iloc[0]["symbol"] == "SPY"
     assert normalized.iloc[1]["adjusted_close"] == 101.4
     assert normalized.iloc[0]["split_coefficient"] == 1.0
+
+
+def test_normalize_news_sentiment_maps_feed_to_raw_news_schema() -> None:
+    payload = {
+        "feed": [
+            {
+                "title": "SPY rallies as inflation cools",
+                "summary": "Markets react positively to cooler inflation data.",
+                "time_published": "20240520T153000",
+                "source": "Reuters",
+                "url": "https://example.com/story",
+                "overall_sentiment_score": 0.25,
+                "overall_sentiment_label": "Bullish",
+                "ticker_sentiment": [{"ticker": "SPY", "ticker_sentiment_score": "0.4"}],
+                "topics": [{"topic": "economy_macro"}],
+                "authors": ["Jane Doe"],
+            }
+        ]
+    }
+
+    frame = normalize_news_sentiment(payload, requested_tickers="SPY", requested_topics="economy_macro")
+
+    assert frame.iloc[0]["headline"] == "SPY rallies as inflation cools"
+    assert frame.iloc[0]["source"] == "Reuters"
+    assert frame.iloc[0]["requested_tickers"] == "SPY"
+    assert frame.iloc[0]["requested_topics"] == "economy_macro"
+    assert frame.iloc[0]["timestamp"].isoformat() == "2024-05-20T15:30:00+00:00"

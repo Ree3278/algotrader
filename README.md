@@ -42,6 +42,18 @@ This also writes normalized VIX data by default to `data/interim/vix_daily.csv`.
 
 ## Build Sentiment Features
 
+Collect raw market news from Alpha Vantage:
+
+```bash
+export ALPHA_VANTAGE_API_KEY=...
+uv run algotrader-fetch-news \
+  --tickers SPY \
+  --topics financial_markets,economy_macro \
+  --time-from 20240101T0000 \
+  --output-csv data/raw/news/news.csv \
+  --output-json data/raw/news/news_raw.json
+```
+
 Turn raw news into daily sentiment features:
 
 ```bash
