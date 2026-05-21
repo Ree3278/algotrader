@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from algotrader.ingestion import load_ohlcv_csv
+from algotrader.ingestion import load_timeseries_csv
 from algotrader.training.artifacts import load_model_artifact, load_training_manifest
 from algotrader.training.dataset import build_training_dataset
 
@@ -23,6 +24,7 @@ def compute_debug_metrics(
     *,
     input_csv: str | Path,
     vix_csv: str | Path | None = None,
+    sentiment_features_csv: str | Path | None = None,
     model_dir: str | Path = "models/latest",
     reports_dir: str | Path = "reports/latest",
 ) -> dict[str, Any]:
@@ -30,7 +32,8 @@ def compute_debug_metrics(
 
     price_frame = load_ohlcv_csv(input_csv)
     vix_frame = load_ohlcv_csv(vix_csv) if vix_csv is not None else None
-    dataset = build_training_dataset(price_frame, vix_frame=vix_frame)
+    sentiment_frame = load_timeseries_csv(sentiment_features_csv) if sentiment_features_csv is not None else None
+    dataset = build_training_dataset(price_frame, vix_frame=vix_frame, sentiment_frame=sentiment_frame)
     manifest, fold_manifest = load_training_manifest(model_dir)
     reports_path = Path(reports_dir)
     fold_summaries = pd.read_csv(reports_path / "fold_summaries.csv")
@@ -108,6 +111,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Compute debugging metrics for a trained algotrader run.")
     parser.add_argument("--input-csv", type=Path, required=True, help="Path to normalized OHLCV CSV")
     parser.add_argument("--vix-csv", type=Path, help="Optional path to normalized VIX CSV")
+    parser.add_argument("--sentiment-features-csv", type=Path, help="Optional path to daily sentiment features CSV")
     parser.add_argument("--model-dir", type=Path, default=Path("models/latest"), help="Directory containing saved fold models")
     parser.add_argument("--reports-dir", type=Path, default=Path("reports/latest"), help="Directory containing fold summary reports")
     return parser
@@ -118,6 +122,7 @@ def main() -> None:
     metrics = compute_debug_metrics(
         input_csv=args.input_csv,
         vix_csv=args.vix_csv,
+        sentiment_features_csv=args.sentiment_features_csv,
         model_dir=args.model_dir,
         reports_dir=args.reports_dir,
     )

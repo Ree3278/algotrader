@@ -11,7 +11,7 @@ import pandas as pd
 @dataclass(frozen=True)
 class TripleBarrierConfig:
     profit_target_atr: float = 1.5
-    stop_loss_atr: float = 2.0
+    stop_loss_atr: float = 1.0
     max_holding_bars: int = 10
     timeout_return_threshold: float = 0.001
     intrabar_tie_break: str = "stop"

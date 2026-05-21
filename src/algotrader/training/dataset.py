@@ -27,6 +27,10 @@ DEFAULT_FEATURE_COLUMNS = [
 
 OPTIONAL_FEATURE_COLUMNS = [
     "vix_zscore_60d",
+    "net_sentiment",
+    "abs_emotion",
+    "is_empty_block",
+    "headline_count",
 ]
 
 
@@ -49,6 +53,7 @@ def build_training_dataset(
     price_frame: pd.DataFrame,
     *,
     vix_frame: pd.DataFrame | None = None,
+    sentiment_frame: pd.DataFrame | None = None,
     label_config: TripleBarrierConfig | None = None,
     feature_columns: list[str] | None = None,
 ) -> TrainingDataset:
@@ -60,6 +65,14 @@ def build_training_dataset(
             raise ValueError("vix_frame must contain a 'close' column")
         aligned_vix = vix_frame["close"].reindex(base_frame.index).ffill()
         base_frame["vix_close"] = aligned_vix
+    if sentiment_frame is not None:
+        sentiment_required = {"net_sentiment", "abs_emotion", "is_empty_block"}
+        missing = sorted(sentiment_required.difference(sentiment_frame.columns))
+        if missing:
+            raise ValueError(f"sentiment_frame is missing required columns: {missing}")
+        aligned_sentiment = sentiment_frame.reindex(base_frame.index)
+        for column in aligned_sentiment.columns:
+            base_frame[column] = aligned_sentiment[column]
 
     features = build_price_features(base_frame)
     labels = generate_long_flat_labels(features, config=label_config)

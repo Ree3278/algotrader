@@ -21,7 +21,20 @@ def save_ohlcv_csv(frame: pd.DataFrame, path: str | Path) -> None:
     frame.to_csv(destination, index=True)
 
 
+def save_timeseries_csv(frame: pd.DataFrame, path: str | Path) -> None:
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    frame.to_csv(destination, index=True)
+
+
 def load_ohlcv_csv(path: str | Path) -> pd.DataFrame:
+    source = Path(path)
+    frame = pd.read_csv(source, index_col=0, parse_dates=True)
+    frame.index = pd.to_datetime(frame.index, utc=True)
+    return frame.sort_index()
+
+
+def load_timeseries_csv(path: str | Path) -> pd.DataFrame:
     source = Path(path)
     frame = pd.read_csv(source, index_col=0, parse_dates=True)
     frame.index = pd.to_datetime(frame.index, utc=True)

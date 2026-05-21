@@ -54,6 +54,19 @@ def _synthetic_vix_frame(periods: int = 520) -> pd.DataFrame:
     )
 
 
+def _synthetic_sentiment_frame(periods: int = 520) -> pd.DataFrame:
+    index = pd.date_range("2023-01-01", periods=periods, freq="D", tz="UTC")
+    return pd.DataFrame(
+        {
+            "net_sentiment": np.sin(np.arange(periods) / 15),
+            "abs_emotion": 0.5 + 0.1 * np.cos(np.arange(periods) / 7),
+            "is_empty_block": np.zeros(periods),
+            "headline_count": 3 + (np.arange(periods) % 4),
+        },
+        index=index,
+    )
+
+
 def _experiment_config() -> WalkForwardExperimentConfig:
     return WalkForwardExperimentConfig(
         split_config=PurgedWalkForwardConfig(
@@ -182,3 +195,43 @@ def test_compute_debug_metrics_reads_saved_artifacts(tmp_path) -> None:
     assert "label_distribution_pct" in metrics
     assert "hit_reason_pct" in metrics
     assert len(metrics["fold_sharpes"]) == metrics["fold_count"]
+
+
+def test_train_and_test_pipeline_accepts_sentiment_features_csv(tmp_path) -> None:
+    price_frame = _synthetic_price_frame()
+    vix_frame = _synthetic_vix_frame()
+    sentiment_frame = _synthetic_sentiment_frame()
+    input_csv = tmp_path / "spy_daily.csv"
+    vix_csv = tmp_path / "vix_daily.csv"
+    sentiment_csv = tmp_path / "sentiment_daily.csv"
+    model_dir = tmp_path / "models"
+    output_dir = tmp_path / "reports"
+    save_ohlcv_csv(price_frame, input_csv)
+    save_ohlcv_csv(vix_frame, vix_csv)
+    sentiment_frame.to_csv(sentiment_csv, index=True)
+
+    train_result = run_training_pipeline(
+        TrainPipelineConfig(
+            symbol="SPY",
+            input_csv=input_csv,
+            vix_input_csv=vix_csv,
+            sentiment_features_csv=sentiment_csv,
+            model_dir=model_dir,
+            experiment_config=_experiment_config(),
+        )
+    )
+    test_result = run_test_pipeline(
+        TestPipelineConfig(
+            symbol="SPY",
+            input_csv=input_csv,
+            vix_input_csv=vix_csv,
+            sentiment_features_csv=sentiment_csv,
+            model_dir=model_dir,
+            output_dir=output_dir,
+            experiment_config=_experiment_config(),
+        )
+    )
+
+    assert "net_sentiment" in train_result.manifest["feature_columns"]
+    assert "abs_emotion" in train_result.manifest["feature_columns"]
+    assert test_result.summary["fold_count"] >= 1

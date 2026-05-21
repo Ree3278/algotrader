@@ -17,6 +17,7 @@ from algotrader.ingestion import (
     fetch_daily_adjusted,
     fetch_yfinance_daily,
     load_ohlcv_csv,
+    load_timeseries_csv,
     normalize_daily_adjusted,
     save_json,
     save_ohlcv_csv,
@@ -53,6 +54,7 @@ class PipelineConfig:
     symbol: str = "SPY"
     input_csv: Path | None = None
     vix_input_csv: Path | None = None
+    sentiment_features_csv: Path | None = None
     fetch_yfinance: bool = False
     yfinance_period: str = "max"
     yfinance_start: str | None = None
@@ -87,6 +89,7 @@ class TrainingRunResult:
     dataset: pd.DataFrame
     price_frame: pd.DataFrame
     vix_frame: pd.DataFrame | None
+    sentiment_frame: pd.DataFrame | None
     manifest: dict[str, Any]
     fold_manifest: pd.DataFrame
     artifact_paths: dict[str, Path]
@@ -97,6 +100,7 @@ class TestRunResult:
     dataset: pd.DataFrame
     price_frame: pd.DataFrame
     vix_frame: pd.DataFrame | None
+    sentiment_frame: pd.DataFrame | None
     fold_summaries: pd.DataFrame
     test_predictions: pd.DataFrame
     summary: dict[str, Any]
@@ -112,6 +116,10 @@ def _default_vix_filename() -> str:
     return "vix_daily.csv"
 
 
+def _default_sentiment_filename() -> str:
+    return "sentiment_daily.csv"
+
+
 def _resolve_vix_input_csv(config: PipelineConfig) -> Path | None:
     if config.vix_input_csv is not None:
         return config.vix_input_csv
@@ -122,12 +130,24 @@ def _resolve_vix_input_csv(config: PipelineConfig) -> Path | None:
     return None
 
 
-def _load_or_fetch_frames(config: PipelineConfig) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+def _resolve_sentiment_features_csv(config: PipelineConfig) -> Path | None:
+    if config.sentiment_features_csv is not None:
+        return config.sentiment_features_csv
+    if config.input_csv is not None:
+        sibling_sentiment = config.input_csv.parent / _default_sentiment_filename()
+        if sibling_sentiment.exists():
+            return sibling_sentiment
+    return None
+
+
+def _load_or_fetch_frames(config: PipelineConfig) -> tuple[pd.DataFrame, pd.DataFrame | None, pd.DataFrame | None]:
     if config.input_csv is not None:
         price_frame = load_ohlcv_csv(config.input_csv)
         resolved_vix_csv = _resolve_vix_input_csv(config)
         vix_frame = load_ohlcv_csv(resolved_vix_csv) if resolved_vix_csv is not None else None
-        return price_frame, vix_frame
+        resolved_sentiment_csv = _resolve_sentiment_features_csv(config)
+        sentiment_frame = load_timeseries_csv(resolved_sentiment_csv) if resolved_sentiment_csv is not None else None
+        return price_frame, vix_frame, sentiment_frame
 
     if config.fetch_yfinance:
         price_frame = fetch_yfinance_daily(
@@ -146,7 +166,9 @@ def _load_or_fetch_frames(config: PipelineConfig) -> tuple[pd.DataFrame, pd.Data
         vix_path = config.normalized_data_dir / _default_vix_filename()
         save_ohlcv_csv(price_frame, normalized_path)
         save_ohlcv_csv(vix_frame, vix_path)
-        return price_frame, vix_frame
+        resolved_sentiment_csv = _resolve_sentiment_features_csv(config)
+        sentiment_frame = load_timeseries_csv(resolved_sentiment_csv) if resolved_sentiment_csv is not None else None
+        return price_frame, vix_frame, sentiment_frame
 
     if config.fetch_alpha_vantage:
         api_key = config.alpha_vantage_key or os.getenv("ALPHA_VANTAGE_API_KEY")
@@ -167,13 +189,19 @@ def _load_or_fetch_frames(config: PipelineConfig) -> tuple[pd.DataFrame, pd.Data
         save_ohlcv_csv(price_frame, normalized_path)
         resolved_vix_csv = _resolve_vix_input_csv(config)
         vix_frame = load_ohlcv_csv(resolved_vix_csv) if resolved_vix_csv is not None else None
-        return price_frame, vix_frame
+        resolved_sentiment_csv = _resolve_sentiment_features_csv(config)
+        sentiment_frame = load_timeseries_csv(resolved_sentiment_csv) if resolved_sentiment_csv is not None else None
+        return price_frame, vix_frame, sentiment_frame
 
     raise ValueError("Provide --input-csv or enable --fetch-yfinance / --fetch-alpha-vantage")
 
 
-def _build_dataset(price_frame: pd.DataFrame, vix_frame: pd.DataFrame | None = None) -> TrainingDataset:
-    dataset = build_training_dataset(price_frame, vix_frame=vix_frame)
+def _build_dataset(
+    price_frame: pd.DataFrame,
+    vix_frame: pd.DataFrame | None = None,
+    sentiment_frame: pd.DataFrame | None = None,
+) -> TrainingDataset:
+    dataset = build_training_dataset(price_frame, vix_frame=vix_frame, sentiment_frame=sentiment_frame)
     if dataset.data.empty:
         raise ValueError("Training dataset is empty after feature warmup and label construction")
     return dataset
@@ -182,8 +210,8 @@ def _build_dataset(price_frame: pd.DataFrame, vix_frame: pd.DataFrame | None = N
 def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
     """Train fold models and persist artifact manifests."""
 
-    price_frame, vix_frame = _load_or_fetch_frames(config)
-    dataset = _build_dataset(price_frame, vix_frame=vix_frame)
+    price_frame, vix_frame, sentiment_frame = _load_or_fetch_frames(config)
+    dataset = _build_dataset(price_frame, vix_frame=vix_frame, sentiment_frame=sentiment_frame)
 
     config.model_dir.mkdir(parents=True, exist_ok=True)
     fold_records: list[dict[str, Any]] = []
@@ -262,6 +290,7 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
         "target_column": dataset.target_column,
         "input_csv": str(config.input_csv) if config.input_csv is not None else None,
         "vix_input_csv": str(config.vix_input_csv) if config.vix_input_csv is not None else None,
+        "sentiment_features_csv": str(config.sentiment_features_csv) if config.sentiment_features_csv is not None else None,
         "experiment_config": json.loads(json.dumps(asdict(config.experiment_config), default=str)),
     }
     artifact_paths = save_training_manifest(
@@ -274,6 +303,7 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
         dataset=dataset.data,
         price_frame=price_frame,
         vix_frame=vix_frame,
+        sentiment_frame=sentiment_frame,
         manifest=manifest,
         fold_manifest=fold_manifest,
         artifact_paths=artifact_paths,
@@ -283,8 +313,8 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
 def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
     """Load trained fold models, score test windows, and write reports."""
 
-    price_frame, vix_frame = _load_or_fetch_frames(config)
-    dataset = _build_dataset(price_frame, vix_frame=vix_frame)
+    price_frame, vix_frame, sentiment_frame = _load_or_fetch_frames(config)
+    dataset = _build_dataset(price_frame, vix_frame=vix_frame, sentiment_frame=sentiment_frame)
     manifest, fold_manifest = load_training_manifest(config.model_dir)
     missing_features = [feature for feature in manifest["feature_columns"] if feature not in dataset.data.columns]
     if missing_features:
@@ -361,6 +391,7 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
         dataset=dataset.data,
         price_frame=price_frame,
         vix_frame=vix_frame,
+        sentiment_frame=sentiment_frame,
         fold_summaries=result.fold_summaries,
         test_predictions=result.test_predictions,
         summary=summary,
@@ -376,6 +407,7 @@ def run_pipeline(config: TestPipelineConfig) -> TestRunResult:
         symbol=config.symbol,
         input_csv=config.input_csv,
         vix_input_csv=config.vix_input_csv,
+        sentiment_features_csv=config.sentiment_features_csv,
         fetch_yfinance=config.fetch_yfinance,
         yfinance_period=config.yfinance_period,
         yfinance_start=config.yfinance_start,
@@ -417,6 +449,7 @@ def _add_shared_data_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--symbol", default="SPY", help="Ticker symbol to analyze")
     parser.add_argument("--input-csv", type=Path, help="Path to normalized OHLCV CSV")
     parser.add_argument("--vix-csv", type=Path, help="Optional path to normalized VIX CSV")
+    parser.add_argument("--sentiment-features-csv", type=Path, help="Optional path to daily sentiment features CSV")
     parser.add_argument("--fetch-yfinance", action="store_true", help="Fetch data from yfinance before running")
     parser.add_argument("--yf-period", default="max", help="yfinance period, e.g. max, 10y, 5y")
     parser.add_argument("--yf-start", help="Optional yfinance start date, YYYY-MM-DD")
@@ -477,6 +510,7 @@ def _train_config_from_args(args: argparse.Namespace) -> TrainPipelineConfig:
         symbol=args.symbol,
         input_csv=args.input_csv,
         vix_input_csv=args.vix_csv,
+        sentiment_features_csv=args.sentiment_features_csv,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
         yfinance_start=args.yf_start,
@@ -493,6 +527,7 @@ def _test_config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
         symbol=args.symbol,
         input_csv=args.input_csv,
         vix_input_csv=args.vix_csv,
+        sentiment_features_csv=args.sentiment_features_csv,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
         yfinance_start=args.yf_start,

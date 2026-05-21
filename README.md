@@ -13,7 +13,7 @@ SPY daily ML trading baseline built around a narrow first milestone:
 This project uses `uv` as the only environment and dependency workflow.
 
 ```bash
-uv sync --extra dev --extra research
+uv sync --extra dev --extra research --extra nlp
 uv run pytest
 ```
 
@@ -28,6 +28,7 @@ uv run pytest
 - yfinance fetch script for daily OHLCV data
 - standalone metrics/debug script for saved runs
 - optional VIX regime feature via local CSV or automatic `^VIX` fetch
+- optional FinBERT-based sentiment feature layer
 
 ## Fetch Data
 
@@ -38,6 +39,29 @@ uv run algotrader-fetch-yf --symbol SPY --output-csv data/interim/spy_daily.csv
 ```
 
 This also writes normalized VIX data by default to `data/interim/vix_daily.csv`.
+
+## Build Sentiment Features
+
+Turn raw news into daily sentiment features:
+
+```bash
+uv run --extra nlp algotrader-build-sentiment \
+  --news-csv data/raw/news/news.csv \
+  --price-csv data/interim/spy_daily.csv \
+  --output-csv data/interim/sentiment_daily.csv \
+  --scored-news-csv data/interim/news_scored.csv
+```
+
+Raw news CSV should include at least:
+
+- `timestamp`
+- `headline`
+
+Optional raw news columns:
+
+- `summary`
+- `source`
+- `url`
 
 ## Train
 
@@ -51,6 +75,15 @@ If `data/interim/vix_daily.csv` exists beside the SPY CSV, it is picked up autom
 
 ```bash
 uv run --extra research algotrader-train --input-csv data/interim/spy_daily.csv --vix-csv data/interim/vix_daily.csv
+```
+
+To include sentiment features:
+
+```bash
+uv run --extra research algotrader-train \
+  --input-csv data/interim/spy_daily.csv \
+  --vix-csv data/interim/vix_daily.csv \
+  --sentiment-features-csv data/interim/sentiment_daily.csv
 ```
 
 Train directly from `yfinance` without a pre-existing CSV:
@@ -75,6 +108,16 @@ uv run --extra research algotrader-test --input-csv data/interim/spy_daily.csv -
 
 If the saved model was trained with VIX features, provide the same VIX CSV or keep `vix_daily.csv` beside the SPY file.
 
+If the saved model was trained with sentiment features, provide the same `sentiment_daily.csv`:
+
+```bash
+uv run --extra research algotrader-test \
+  --input-csv data/interim/spy_daily.csv \
+  --vix-csv data/interim/vix_daily.csv \
+  --sentiment-features-csv data/interim/sentiment_daily.csv \
+  --model-dir models/latest
+```
+
 ## Inspect Metrics
 
 Compute the debugging metrics for a saved run:
@@ -87,6 +130,17 @@ If the run used VIX features:
 
 ```bash
 uv run --extra research algotrader-metrics --input-csv data/interim/spy_daily.csv --vix-csv data/interim/vix_daily.csv --model-dir models/latest --reports-dir reports/latest
+```
+
+If the run used sentiment features too:
+
+```bash
+uv run --extra research algotrader-metrics \
+  --input-csv data/interim/spy_daily.csv \
+  --vix-csv data/interim/vix_daily.csv \
+  --sentiment-features-csv data/interim/sentiment_daily.csv \
+  --model-dir models/latest \
+  --reports-dir reports/latest
 ```
 
 This prints:
