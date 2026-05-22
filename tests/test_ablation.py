@@ -116,6 +116,10 @@ def test_run_feature_ablation_writes_outputs(tmp_path) -> None:
         "price_plus_regime",
         "price_plus_regime_plus_sentiment",
     ]
+    feature_counts = dict(zip(results["variant"], results["feature_count"]))
+    assert feature_counts["price_only"] == 13
+    assert feature_counts["price_plus_regime"] == 14
+    assert feature_counts["price_plus_regime_plus_sentiment"] == 18
     assert paths["csv"].exists()
     assert paths["json"].exists()
     assert paths["summary"].exists()

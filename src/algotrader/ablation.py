@@ -60,6 +60,7 @@ def _materialize_local_inputs(
         input_csv=price_csv,
         vix_input_csv=vix_csv,
         sentiment_features_csv=sentiment_csv,
+        auto_discover_companion_inputs=False,
         fetch_yfinance=False,
         fetch_alpha_vantage=False,
     )
@@ -104,6 +105,7 @@ def run_feature_ablation(
             local_base_config,
             vix_input_csv=local_base_config.vix_input_csv if variant.use_vix else None,
             sentiment_features_csv=local_base_config.sentiment_features_csv if variant.use_sentiment else None,
+            auto_discover_companion_inputs=False,
             model_dir=run_root / "models",
             output_dir=run_root / "reports",
         )

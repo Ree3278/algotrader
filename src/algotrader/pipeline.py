@@ -47,6 +47,7 @@ class PipelineConfig:
     input_csv: Path | None = None
     vix_input_csv: Path | None = None
     sentiment_features_csv: Path | None = None
+    auto_discover_companion_inputs: bool = True
     fetch_yfinance: bool = False
     yfinance_period: str = "max"
     yfinance_start: str | None = None
@@ -122,6 +123,8 @@ def _resolved_label_config(config: PipelineConfig):
 def _resolve_vix_input_csv(config: PipelineConfig) -> Path | None:
     if config.vix_input_csv is not None:
         return config.vix_input_csv
+    if not config.auto_discover_companion_inputs:
+        return None
     if config.input_csv is not None:
         sibling_vix = config.input_csv.parent / _default_vix_filename()
         if sibling_vix.exists():
@@ -132,6 +135,8 @@ def _resolve_vix_input_csv(config: PipelineConfig) -> Path | None:
 def _resolve_sentiment_features_csv(config: PipelineConfig) -> Path | None:
     if config.sentiment_features_csv is not None:
         return config.sentiment_features_csv
+    if not config.auto_discover_companion_inputs:
+        return None
     if config.input_csv is not None:
         sibling_sentiment = config.input_csv.parent / _default_sentiment_filename()
         if sibling_sentiment.exists():
@@ -425,6 +430,7 @@ def run_pipeline(config: TestPipelineConfig) -> TestRunResult:
         input_csv=config.input_csv,
         vix_input_csv=config.vix_input_csv,
         sentiment_features_csv=config.sentiment_features_csv,
+        auto_discover_companion_inputs=config.auto_discover_companion_inputs,
         fetch_yfinance=config.fetch_yfinance,
         yfinance_period=config.yfinance_period,
         yfinance_start=config.yfinance_start,
@@ -529,6 +535,7 @@ def _train_config_from_args(args: argparse.Namespace) -> TrainPipelineConfig:
         input_csv=args.input_csv,
         vix_input_csv=args.vix_csv,
         sentiment_features_csv=args.sentiment_features_csv,
+        auto_discover_companion_inputs=True,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
         yfinance_start=args.yf_start,
@@ -546,6 +553,7 @@ def _test_config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
         input_csv=args.input_csv,
         vix_input_csv=args.vix_csv,
         sentiment_features_csv=args.sentiment_features_csv,
+        auto_discover_companion_inputs=True,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
         yfinance_start=args.yf_start,
