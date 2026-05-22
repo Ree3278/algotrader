@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -22,7 +22,9 @@ from algotrader.ingestion import (
     save_json,
     save_ohlcv_csv,
 )
-from algotrader.reporting import build_experiment_summary, write_experiment_reports
+from algotrader.labels import TripleBarrierConfig
+from algotrader.reporting import build_experiment_summary, format_test_terminal_summary, write_experiment_reports
+from algotrader.settings import DEFAULT_SETTINGS, ProjectSettings
 from algotrader.training.artifacts import (
     load_model_artifact,
     load_training_manifest,
@@ -35,22 +37,13 @@ from algotrader.training.experiment import (
     WalkForwardExperimentResult,
     _select_threshold,
 )
-from algotrader.training.walk_forward import PurgedWalkForwardConfig, generate_splits
-from algotrader.training.xgboost_model import XGBoostConfig, train_xgboost_classifier
-
-
-DEFAULT_SPLIT_CONFIG = PurgedWalkForwardConfig(
-    train_size=504,
-    test_size=252,
-    step_size=252,
-    embargo_size=10,
-    max_label_horizon=10,
-)
+from algotrader.training.walk_forward import generate_splits
+from algotrader.training.xgboost_model import train_xgboost_classifier
 
 
 @dataclass(frozen=True)
 class PipelineConfig:
-    symbol: str = "SPY"
+    symbol: str = DEFAULT_SETTINGS.data.symbol
     input_csv: Path | None = None
     vix_input_csv: Path | None = None
     sentiment_features_csv: Path | None = None
@@ -61,22 +54,21 @@ class PipelineConfig:
     fetch_alpha_vantage: bool = False
     alpha_vantage_key: str | None = None
     alpha_vantage_outputsize: str = "full"
-    raw_data_dir: Path = Path("data/raw/ohlcv")
-    normalized_data_dir: Path = Path("data/interim")
-    experiment_config: WalkForwardExperimentConfig = field(
-        default_factory=lambda: WalkForwardExperimentConfig(split_config=DEFAULT_SPLIT_CONFIG)
-    )
+    raw_data_dir: Path = DEFAULT_SETTINGS.paths.raw_data_dir
+    normalized_data_dir: Path = DEFAULT_SETTINGS.paths.normalized_data_dir
+    settings: ProjectSettings = field(default_factory=lambda: DEFAULT_SETTINGS)
+    experiment_config: WalkForwardExperimentConfig | None = None
 
 
 @dataclass(frozen=True)
 class TrainPipelineConfig(PipelineConfig):
-    model_dir: Path = Path("models/latest")
+    model_dir: Path = DEFAULT_SETTINGS.paths.model_dir
 
 
 @dataclass(frozen=True)
 class TestPipelineConfig(PipelineConfig):
-    model_dir: Path = Path("models/latest")
-    output_dir: Path = Path("reports/latest")
+    model_dir: Path = DEFAULT_SETTINGS.paths.model_dir
+    output_dir: Path = DEFAULT_SETTINGS.paths.report_dir
 
 
 TrainPipelineConfig.__test__ = False
@@ -119,6 +111,14 @@ def _default_sentiment_filename() -> str:
     return "sentiment_daily.csv"
 
 
+def _resolved_experiment_config(config: PipelineConfig) -> WalkForwardExperimentConfig:
+    return config.experiment_config or config.settings.build_experiment_config()
+
+
+def _resolved_label_config(config: PipelineConfig):
+    return config.settings.build_label_config()
+
+
 def _resolve_vix_input_csv(config: PipelineConfig) -> Path | None:
     if config.vix_input_csv is not None:
         return config.vix_input_csv
@@ -156,7 +156,7 @@ def _load_or_fetch_frames(config: PipelineConfig) -> tuple[pd.DataFrame, pd.Data
             end=config.yfinance_end,
         )
         vix_frame = fetch_yfinance_daily(
-            "^VIX",
+            config.settings.data.vix_symbol,
             period=config.yfinance_period,
             start=config.yfinance_start,
             end=config.yfinance_end,
@@ -196,11 +196,18 @@ def _load_or_fetch_frames(config: PipelineConfig) -> tuple[pd.DataFrame, pd.Data
 
 
 def _build_dataset(
+    config: PipelineConfig,
     price_frame: pd.DataFrame,
     vix_frame: pd.DataFrame | None = None,
     sentiment_frame: pd.DataFrame | None = None,
+    label_config: TripleBarrierConfig | None = None,
 ) -> TrainingDataset:
-    dataset = build_training_dataset(price_frame, vix_frame=vix_frame, sentiment_frame=sentiment_frame)
+    dataset = build_training_dataset(
+        price_frame,
+        vix_frame=vix_frame,
+        sentiment_frame=sentiment_frame,
+        label_config=label_config or _resolved_label_config(config),
+    )
     if dataset.data.empty:
         raise ValueError("Training dataset is empty after feature warmup and label construction")
     return dataset
@@ -210,33 +217,34 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
     """Train fold models and persist artifact manifests."""
 
     price_frame, vix_frame, sentiment_frame = _load_or_fetch_frames(config)
-    dataset = _build_dataset(price_frame, vix_frame=vix_frame, sentiment_frame=sentiment_frame)
+    dataset = _build_dataset(config, price_frame, vix_frame=vix_frame, sentiment_frame=sentiment_frame)
+    experiment_config = _resolved_experiment_config(config)
 
     config.model_dir.mkdir(parents=True, exist_ok=True)
     fold_records: list[dict[str, Any]] = []
 
-    for split in generate_splits(dataset.data.index, config.experiment_config.split_config):
+    for split in generate_splits(dataset.data.index, experiment_config.split_config):
         train_data = dataset.data.iloc[split.train_indices]
         test_data = dataset.data.iloc[split.test_indices]
 
-        if len(train_data) < config.experiment_config.min_training_size or test_data.empty:
+        if len(train_data) < experiment_config.min_training_size or test_data.empty:
             continue
 
         calibration_size = max(
-            int(len(train_data) * config.experiment_config.calibration_fraction),
-            config.experiment_config.min_calibration_size,
+            int(len(train_data) * experiment_config.calibration_fraction),
+            experiment_config.min_calibration_size,
         )
         calibration_data = train_data.iloc[0:0]
-        selected_threshold = config.experiment_config.backtest_config.probability_threshold
+        selected_threshold = experiment_config.backtest_config.probability_threshold
 
-        if len(train_data) >= config.experiment_config.min_training_size + calibration_size:
+        if len(train_data) >= experiment_config.min_training_size + calibration_size:
             train_core = train_data.iloc[:-calibration_size]
             calibration_data = train_data.iloc[-calibration_size:]
 
             calibration_model = train_xgboost_classifier(
                 train_core[dataset.feature_columns],
                 train_core[dataset.target_column],
-                config=config.experiment_config.model_config,
+                config=experiment_config.model_config,
             )
             calibration_probabilities = pd.Series(
                 calibration_model.predict_proba(calibration_data[dataset.feature_columns])[:, 1],
@@ -246,14 +254,14 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
                 price_frame,
                 calibration_data,
                 calibration_probabilities,
-                config.experiment_config.backtest_config,
-                config.experiment_config.threshold_grid,
+                experiment_config.backtest_config,
+                experiment_config.threshold_grid,
             )
 
         final_model = train_xgboost_classifier(
             train_data[dataset.feature_columns],
             train_data[dataset.target_column],
-            config=config.experiment_config.model_config,
+            config=experiment_config.model_config,
         )
         model_backend = getattr(final_model, "_algotrader_backend", "unknown")
         model_filename = f"fold_{split.fold:03d}.pkl"
@@ -290,7 +298,8 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
         "input_csv": str(config.input_csv) if config.input_csv is not None else None,
         "vix_input_csv": str(config.vix_input_csv) if config.vix_input_csv is not None else None,
         "sentiment_features_csv": str(config.sentiment_features_csv) if config.sentiment_features_csv is not None else None,
-        "experiment_config": json.loads(json.dumps(asdict(config.experiment_config), default=str)),
+        "label_config": json.loads(json.dumps(asdict(_resolved_label_config(config)), default=str)),
+        "experiment_config": json.loads(json.dumps(asdict(experiment_config), default=str)),
     }
     artifact_paths = save_training_manifest(
         config.model_dir,
@@ -313,8 +322,17 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
     """Load trained fold models, score test windows, and write reports."""
 
     price_frame, vix_frame, sentiment_frame = _load_or_fetch_frames(config)
-    dataset = _build_dataset(price_frame, vix_frame=vix_frame, sentiment_frame=sentiment_frame)
     manifest, fold_manifest = load_training_manifest(config.model_dir)
+    label_config = None
+    if manifest.get("label_config") is not None:
+        label_config = TripleBarrierConfig(**manifest["label_config"])
+    dataset = _build_dataset(
+        config,
+        price_frame,
+        vix_frame=vix_frame,
+        sentiment_frame=sentiment_frame,
+        label_config=label_config,
+    )
     missing_features = [feature for feature in manifest["feature_columns"] if feature not in dataset.data.columns]
     if missing_features:
         raise ValueError(
@@ -324,6 +342,7 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
 
     prediction_frames: list[pd.DataFrame] = []
     fold_summaries: list[dict[str, Any]] = []
+    experiment_config = _resolved_experiment_config(config)
 
     for fold_row in fold_manifest.itertuples(index=False):
         test_data = dataset.data.loc[fold_row.test_start : fold_row.test_end]
@@ -338,8 +357,8 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
 
         backtest_config = BacktestConfig(
             probability_threshold=float(fold_row.selected_threshold),
-            commission_bps=config.experiment_config.backtest_config.commission_bps,
-            slippage_bps=config.experiment_config.backtest_config.slippage_bps,
+            commission_bps=experiment_config.backtest_config.commission_bps,
+            slippage_bps=experiment_config.backtest_config.slippage_bps,
         )
         from algotrader.backtest import run_long_flat_backtest, summarize_backtest
 
@@ -415,6 +434,7 @@ def run_pipeline(config: TestPipelineConfig) -> TestRunResult:
         alpha_vantage_outputsize=config.alpha_vantage_outputsize,
         raw_data_dir=config.raw_data_dir,
         normalized_data_dir=config.normalized_data_dir,
+        settings=config.settings,
         experiment_config=config.experiment_config,
         model_dir=config.model_dir,
     )
@@ -437,14 +457,14 @@ def run_fetch_yfinance(
     save_ohlcv_csv(price_frame, output_csv)
     saved_vix_path = None
     if vix_output_csv is not None:
-        vix_frame = fetch_yfinance_daily("^VIX", period=period, start=start, end=end)
+        vix_frame = fetch_yfinance_daily(DEFAULT_SETTINGS.data.vix_symbol, period=period, start=start, end=end)
         save_ohlcv_csv(vix_frame, vix_output_csv)
         saved_vix_path = vix_output_csv
     return output_csv, saved_vix_path
 
 
 def _add_shared_data_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--symbol", default="SPY", help="Ticker symbol to analyze")
+    parser.add_argument("--symbol", default=DEFAULT_SETTINGS.data.symbol, help="Ticker symbol to analyze")
     parser.add_argument("--input-csv", type=Path, help="Path to normalized OHLCV CSV")
     parser.add_argument("--vix-csv", type=Path, help="Optional path to normalized VIX CSV")
     parser.add_argument("--sentiment-features-csv", type=Path, help="Optional path to daily sentiment features CSV")
@@ -457,29 +477,29 @@ def _add_shared_data_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_shared_model_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--backend", default="auto", choices=["auto", "xgboost", "hist_gradient_boosting"])
-    parser.add_argument("--threshold", type=float, default=0.55, help="Default probability threshold")
-    parser.add_argument("--commission-bps", type=float, default=1.0, help="Commission in basis points")
-    parser.add_argument("--slippage-bps", type=float, default=2.0, help="Slippage in basis points")
+    parser.add_argument("--backend", default=DEFAULT_SETTINGS.model.backend, choices=["auto", "xgboost", "hist_gradient_boosting"])
+    parser.add_argument("--threshold", type=float, default=DEFAULT_SETTINGS.backtest.probability_threshold, help="Default probability threshold")
+    parser.add_argument("--commission-bps", type=float, default=DEFAULT_SETTINGS.backtest.commission_bps, help="Commission in basis points")
+    parser.add_argument("--slippage-bps", type=float, default=DEFAULT_SETTINGS.backtest.slippage_bps, help="Slippage in basis points")
 
 
-def _experiment_config_from_args(args: argparse.Namespace) -> WalkForwardExperimentConfig:
-    return WalkForwardExperimentConfig(
-        split_config=DEFAULT_SPLIT_CONFIG,
-        model_config=XGBoostConfig(backend=args.backend),
-        backtest_config=BacktestConfig(
-            probability_threshold=args.threshold,
-            commission_bps=args.commission_bps,
-            slippage_bps=args.slippage_bps,
-        ),
+def _settings_from_args(args: argparse.Namespace) -> ProjectSettings:
+    data_settings = replace(DEFAULT_SETTINGS.data, symbol=args.symbol)
+    model_settings = replace(DEFAULT_SETTINGS.model, backend=args.backend)
+    backtest_settings = replace(
+        DEFAULT_SETTINGS.backtest,
+        probability_threshold=args.threshold,
+        commission_bps=args.commission_bps,
+        slippage_bps=args.slippage_bps,
     )
+    return replace(DEFAULT_SETTINGS, data=data_settings, model=model_settings, backtest=backtest_settings)
 
 
 def build_train_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train walk-forward fold models.")
     _add_shared_data_args(parser)
     _add_shared_model_args(parser)
-    parser.add_argument("--model-dir", type=Path, default=Path("models/latest"), help="Directory for saved fold models")
+    parser.add_argument("--model-dir", type=Path, default=DEFAULT_SETTINGS.paths.model_dir, help="Directory for saved fold models")
     return parser
 
 
@@ -487,16 +507,16 @@ def build_test_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Evaluate saved fold models on test windows.")
     _add_shared_data_args(parser)
     _add_shared_model_args(parser)
-    parser.add_argument("--model-dir", type=Path, default=Path("models/latest"), help="Directory containing saved fold models")
-    parser.add_argument("--output-dir", type=Path, default=Path("reports/latest"), help="Directory for generated reports")
+    parser.add_argument("--model-dir", type=Path, default=DEFAULT_SETTINGS.paths.model_dir, help="Directory containing saved fold models")
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_SETTINGS.paths.report_dir, help="Directory for generated reports")
     return parser
 
 
 def build_fetch_yfinance_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Fetch and normalize daily OHLCV data from yfinance.")
-    parser.add_argument("--symbol", default="SPY", help="Ticker symbol to download")
-    parser.add_argument("--output-csv", type=Path, default=Path("data/interim/spy_daily.csv"), help="Output CSV path")
-    parser.add_argument("--vix-output-csv", type=Path, default=Path(f"data/interim/{_default_vix_filename()}"), help="Optional output CSV path for normalized VIX data")
+    parser.add_argument("--symbol", default=DEFAULT_SETTINGS.data.symbol, help="Ticker symbol to download")
+    parser.add_argument("--output-csv", type=Path, default=DEFAULT_SETTINGS.paths.normalized_data_dir / "spy_daily.csv", help="Output CSV path")
+    parser.add_argument("--vix-output-csv", type=Path, default=DEFAULT_SETTINGS.paths.normalized_data_dir / _default_vix_filename(), help="Optional output CSV path for normalized VIX data")
     parser.add_argument("--period", default="max", help="yfinance period, e.g. max, 10y, 5y")
     parser.add_argument("--start", help="Optional yfinance start date, YYYY-MM-DD")
     parser.add_argument("--end", help="Optional yfinance end date, YYYY-MM-DD")
@@ -515,7 +535,7 @@ def _train_config_from_args(args: argparse.Namespace) -> TrainPipelineConfig:
         yfinance_end=args.yf_end,
         fetch_alpha_vantage=args.fetch_alpha_vantage,
         alpha_vantage_key=args.alpha_vantage_key,
-        experiment_config=_experiment_config_from_args(args),
+        settings=_settings_from_args(args),
         model_dir=args.model_dir,
     )
 
@@ -532,7 +552,7 @@ def _test_config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
         yfinance_end=args.yf_end,
         fetch_alpha_vantage=args.fetch_alpha_vantage,
         alpha_vantage_key=args.alpha_vantage_key,
-        experiment_config=_experiment_config_from_args(args),
+        settings=_settings_from_args(args),
         model_dir=args.model_dir,
         output_dir=args.output_dir,
     )
@@ -549,8 +569,7 @@ def test_main() -> None:
     parser = build_test_arg_parser()
     args = parser.parse_args()
     result = run_test_pipeline(_test_config_from_args(args))
-    print(json.dumps({key: str(value) if isinstance(value, Path) else value for key, value in result.summary.items()}, indent=2))
-    print(f"reports_written={args.output_dir}")
+    print(format_test_terminal_summary(result.summary, result.dataset))
 
 
 def fetch_yfinance_main() -> None:
@@ -573,8 +592,7 @@ def main() -> None:
     parser = build_test_arg_parser()
     args = parser.parse_args()
     result = run_pipeline(_test_config_from_args(args))
-    print(json.dumps({key: str(value) if isinstance(value, Path) else value for key, value in result.summary.items()}, indent=2))
-    print(f"reports_written={args.output_dir}")
+    print(format_test_terminal_summary(result.summary, result.dataset))
 
 
 if __name__ == "__main__":

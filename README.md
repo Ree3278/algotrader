@@ -29,6 +29,20 @@ uv run pytest
 - standalone metrics/debug script for saved runs
 - optional VIX regime feature via local CSV or automatic `^VIX` fetch
 - optional FinBERT-based sentiment feature layer
+- centralized defaults in `src/algotrader/settings.py`
+
+## Settings
+
+Project defaults now live in `src/algotrader/settings.py`.
+
+That file is the source of truth for:
+
+- symbol and data-path defaults
+- triple-barrier label settings
+- walk-forward split sizes
+- model defaults
+- backtest costs and threshold defaults
+- experiment calibration settings
 
 ## Fetch Data
 
@@ -117,6 +131,15 @@ Evaluate saved fold models and write reports:
 ```bash
 uv run --extra research algotrader-test --input-csv data/interim/spy_daily.csv --model-dir models/latest
 ```
+
+The terminal output now prints a compact summary with:
+
+- mean total return
+- mean Sharpe
+- mean trade count
+- mean max drawdown
+- label distribution
+- hit-reason distribution
 
 If the saved model was trained with VIX features, provide the same VIX CSV or keep `vix_daily.csv` beside the SPY file.
 

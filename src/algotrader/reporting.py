@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-
 from algotrader.training.experiment import WalkForwardExperimentResult
 
 
@@ -80,3 +79,36 @@ def write_experiment_reports(
         "test_predictions": predictions_path,
         "summary": summary_path,
     }
+
+
+def _format_distribution_lines(distribution: pd.Series, mapping: dict[Any, str] | None = None) -> list[str]:
+    lines: list[str] = []
+    for key, value in distribution.items():
+        label = mapping.get(key, str(key)) if mapping is not None else str(key)
+        lines.append(f"  {label}: {100 * float(value):.2f}%")
+    if not lines:
+        lines.append("  none")
+    return lines
+
+
+def format_test_terminal_summary(
+    summary: dict[str, Any],
+    dataset: pd.DataFrame,
+) -> str:
+    """Render the small set of headline diagnostics for terminal output."""
+
+    label_distribution = dataset["label"].value_counts(normalize=True).sort_index()
+    hit_reason_distribution = dataset["hit_reason"].value_counts(normalize=True)
+
+    lines = [
+        f"Symbol: {summary['symbol']}",
+        f"Mean Total Return: {100 * float(summary.get('mean_total_return', 0.0)):.2f}%",
+        f"Mean Sharpe: {float(summary.get('mean_sharpe', 0.0)):.2f}",
+        f"Mean Trade Count: {float(summary.get('mean_trade_count', 0.0)):.2f}",
+        f"Mean Max Drawdown: {100 * float(summary.get('mean_max_drawdown', 0.0)):.2f}%",
+        "Label Distribution:",
+        *_format_distribution_lines(label_distribution, mapping={0: "Flat", 1: "Long"}),
+        "Hit-Reason Distribution:",
+        *_format_distribution_lines(hit_reason_distribution),
+    ]
+    return "\n".join(lines)

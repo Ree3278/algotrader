@@ -9,6 +9,8 @@ from algotrader.backtest import BacktestConfig
 from algotrader.ingestion.storage import save_ohlcv_csv
 from algotrader.metrics import compute_debug_metrics
 from algotrader.pipeline import TestPipelineConfig, TrainPipelineConfig, run_pipeline, run_test_pipeline, run_training_pipeline
+from algotrader.reporting import format_test_terminal_summary
+from algotrader.settings import DEFAULT_SETTINGS
 from algotrader.training.experiment import WalkForwardExperimentConfig
 from algotrader.training.walk_forward import PurgedWalkForwardConfig
 from algotrader.training.xgboost_model import XGBoostConfig
@@ -138,6 +140,7 @@ def test_train_then_test_pipeline_from_local_csv_writes_artifacts(tmp_path) -> N
     saved_summary = json.loads(test_result.report_paths["summary"].read_text(encoding="utf-8"))
     assert saved_summary["symbol"] == "SPY"
     assert saved_summary["model_backend"] == "hist_gradient_boosting"
+    assert train_result.manifest["label_config"]["max_holding_bars"] == DEFAULT_SETTINGS.labels.max_holding_bars
 
 
 def test_run_pipeline_wrapper_still_executes_train_plus_test(tmp_path) -> None:
@@ -160,6 +163,34 @@ def test_run_pipeline_wrapper_still_executes_train_plus_test(tmp_path) -> None:
     )
 
     assert result.summary["fold_count"] >= 1
+
+
+def test_terminal_summary_includes_requested_headline_metrics(tmp_path) -> None:
+    price_frame = _synthetic_price_frame()
+    vix_frame = _synthetic_vix_frame()
+    input_csv = tmp_path / "spy_daily.csv"
+    vix_csv = tmp_path / "vix_daily.csv"
+    save_ohlcv_csv(price_frame, input_csv)
+    save_ohlcv_csv(vix_frame, vix_csv)
+
+    result = run_pipeline(
+        TestPipelineConfig(
+            symbol="SPY",
+            input_csv=input_csv,
+            vix_input_csv=vix_csv,
+            model_dir=tmp_path / "models",
+            output_dir=tmp_path / "reports",
+            experiment_config=_experiment_config(),
+        )
+    )
+
+    terminal_summary = format_test_terminal_summary(result.summary, result.dataset)
+    assert "Mean Total Return:" in terminal_summary
+    assert "Mean Sharpe:" in terminal_summary
+    assert "Mean Trade Count:" in terminal_summary
+    assert "Mean Max Drawdown:" in terminal_summary
+    assert "Label Distribution:" in terminal_summary
+    assert "Hit-Reason Distribution:" in terminal_summary
 
 
 def test_compute_debug_metrics_reads_saved_artifacts(tmp_path) -> None:
