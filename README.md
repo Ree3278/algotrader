@@ -185,6 +185,42 @@ This prints:
 - chronological per-fold Sharpe values
 - averaged feature importances when the backend supports them
 
+## Label Sweep
+
+Run a controlled sweep over the triple-barrier label geometry:
+
+```bash
+uv run --extra research algotrader-label-sweep \
+  --input-csv data/interim/spy_daily.csv \
+  --vix-csv data/interim/vix_daily.csv \
+  --sentiment-features-csv data/interim/sentiment_daily.csv
+```
+
+Default sweep grid:
+
+- `profit_target_atr`: `1.0`, `1.25`, `1.5`
+- `stop_loss_atr`: `1.0`, `1.25`, `1.5`
+- `max_holding_bars`: `5`, `10`, `15`
+- `timeout_return_threshold`: `0.0`, `0.001`
+
+The sweep writes:
+
+- aggregate results CSV: `label_sweep_results.csv`
+- aggregate results JSON: `label_sweep_results.json`
+- top-config summary: `label_sweep_summary.json`
+- per-run model/report artifacts under `runs/<config_slug>/`
+
+To run a smaller sweep:
+
+```bash
+uv run --extra research algotrader-label-sweep \
+  --input-csv data/interim/spy_daily.csv \
+  --profit-target-atrs 1.0 1.25 \
+  --stop-loss-atrs 1.0 1.25 \
+  --max-holding-bars 5 10 \
+  --timeout-thresholds 0.0 0.001
+```
+
 ## Combined Run
 
 Local CSV:
