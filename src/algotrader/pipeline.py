@@ -27,6 +27,11 @@ from algotrader.profiles import build_model_profile, list_profile_names
 from algotrader.reporting import build_experiment_summary, format_test_terminal_summary, write_experiment_reports
 from algotrader.settings import DEFAULT_SETTINGS, ProjectSettings
 from algotrader.thresholds import list_threshold_policy_names
+from algotrader.training.calibration import (
+    ProbabilityCalibrator,
+    apply_probability_calibration,
+    fit_probability_calibrator,
+)
 from algotrader.training.artifacts import (
     load_model_artifact,
     load_training_manifest,
@@ -59,6 +64,7 @@ class PipelineConfig:
     feature_columns: list[str] | None = None
     profile_name: str = DEFAULT_SETTINGS.profiles.default_profile_name
     threshold_policy_name: str = DEFAULT_SETTINGS.thresholds.default_policy_name
+    probability_calibration_method: str = DEFAULT_SETTINGS.experiment.probability_calibration_method
     auto_discover_companion_inputs: bool = True
     fetch_yfinance: bool = False
     yfinance_period: str = "max"
@@ -137,6 +143,7 @@ def _resolved_experiment_config(config: PipelineConfig) -> WalkForwardExperiment
     return replace(
         base_experiment_config,
         threshold_policy_name=config.threshold_policy_name,
+        probability_calibration_method=config.probability_calibration_method,
     )
 
 
@@ -295,6 +302,12 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
                 calibration_model.predict_proba(calibration_data[dataset.feature_columns])[:, 1],
                 index=calibration_data.index,
             )
+            calibrator = fit_probability_calibrator(
+                calibration_probabilities,
+                calibration_data[dataset.target_column],
+                method=experiment_config.probability_calibration_method,
+            )
+            calibration_probabilities = apply_probability_calibration(calibrator, calibration_probabilities)
             threshold_selection = select_thresholds(
                 price_frame,
                 calibration_data,
@@ -303,22 +316,35 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
                 experiment_config.threshold_grid,
                 experiment_config.threshold_policy_name,
             )
-
-        final_model = train_xgboost_classifier(
-            train_data[dataset.feature_columns],
-            train_data[dataset.target_column],
-            config=experiment_config.model_config,
-        )
+            if calibrator.method == "none":
+                final_model = train_xgboost_classifier(
+                    train_data[dataset.feature_columns],
+                    train_data[dataset.target_column],
+                    config=experiment_config.model_config,
+                )
+            else:
+                final_model = calibration_model
+        else:
+            calibrator = ProbabilityCalibrator(method="none")
+            final_model = train_xgboost_classifier(
+                train_data[dataset.feature_columns],
+                train_data[dataset.target_column],
+                config=experiment_config.model_config,
+            )
         model_backend = getattr(final_model, "_algotrader_backend", "unknown")
         model_filename = f"fold_{split.fold:03d}.pkl"
+        calibrator_filename = f"fold_{split.fold:03d}_calibrator.pkl"
         save_model_artifact(final_model, config.model_dir / model_filename)
+        save_model_artifact(calibrator, config.model_dir / calibrator_filename)
 
         fold_records.append(
             {
                 "fold": split.fold,
                 "model_file": model_filename,
+                "calibrator_file": calibrator_filename,
                 "model_backend": model_backend,
                 "threshold_policy_name": threshold_selection.policy_name,
+                "probability_calibration_method": calibrator.method,
                 "selected_threshold": float(threshold_selection.representative_threshold),
                 "selected_threshold_map": json.dumps(threshold_selection.thresholds_by_regime, sort_keys=True),
                 "train_size": int(len(train_data)),
@@ -345,6 +371,7 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
         "profile_name": config.profile_name,
         "profile_blocks": _resolved_profile(config).block_names,
         "threshold_policy_name": experiment_config.threshold_policy_name,
+        "probability_calibration_method": experiment_config.probability_calibration_method,
         "target_column": dataset.target_column,
         "input_csv": str(config.input_csv) if config.input_csv is not None else None,
         "vix_input_csv": str(config.vix_input_csv) if config.vix_input_csv is not None else None,
@@ -379,6 +406,10 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
         profile_name=manifest.get("profile_name", config.profile_name),
         feature_columns=manifest.get("feature_columns"),
         threshold_policy_name=manifest.get("threshold_policy_name", config.threshold_policy_name),
+        probability_calibration_method=manifest.get(
+            "probability_calibration_method",
+            config.probability_calibration_method,
+        ),
     )
     label_config = None
     if manifest.get("label_config") is not None:
@@ -411,6 +442,11 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
             model.predict_proba(test_data[manifest["feature_columns"]])[:, 1],
             index=test_data.index,
         )
+        calibrator = ProbabilityCalibrator(method="none")
+        calibrator_file = getattr(fold_row, "calibrator_file", None)
+        if isinstance(calibrator_file, str) and calibrator_file:
+            calibrator = load_model_artifact(config.model_dir / calibrator_file)
+        test_probabilities = apply_probability_calibration(calibrator, test_probabilities)
 
         threshold_policy_name = getattr(
             fold_row,
@@ -447,6 +483,7 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
                     "fold": fold_row.fold,
                     "probability_long": test_probabilities,
                     "label": test_data[manifest["target_column"]],
+                    "probability_calibration_method": calibrator.method,
                     "selected_threshold": threshold_series,
                     "threshold_regime": threshold_regimes,
                 }
@@ -461,6 +498,7 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
                 "test_size": int(fold_row.test_size),
                 "model_backend": str(fold_row.model_backend),
                 "threshold_policy_name": threshold_policy_name,
+                "probability_calibration_method": calibrator.method,
                 "selected_threshold": float(fold_row.selected_threshold),
                 **metrics,
             }
@@ -506,6 +544,7 @@ def run_pipeline(config: TestPipelineConfig) -> TestRunResult:
         feature_columns=config.feature_columns,
         profile_name=config.profile_name,
         threshold_policy_name=config.threshold_policy_name,
+        probability_calibration_method=config.probability_calibration_method,
         auto_discover_companion_inputs=config.auto_discover_companion_inputs,
         fetch_yfinance=config.fetch_yfinance,
         yfinance_period=config.yfinance_period,
@@ -565,6 +604,11 @@ def _add_shared_model_args(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_SETTINGS.thresholds.default_policy_name,
         choices=list_threshold_policy_names(),
     )
+    parser.add_argument(
+        "--probability-calibration",
+        default=DEFAULT_SETTINGS.experiment.probability_calibration_method,
+        choices=["none", "platt"],
+    )
     parser.add_argument("--backend", default=DEFAULT_SETTINGS.model.backend, choices=["auto", "xgboost", "hist_gradient_boosting"])
     parser.add_argument("--threshold", type=float, default=DEFAULT_SETTINGS.backtest.probability_threshold, help="Default probability threshold")
     parser.add_argument("--commission-bps", type=float, default=DEFAULT_SETTINGS.backtest.commission_bps, help="Commission in basis points")
@@ -581,11 +625,16 @@ def _settings_from_args(args: argparse.Namespace) -> ProjectSettings:
         slippage_bps=args.slippage_bps,
     )
     threshold_settings = replace(DEFAULT_SETTINGS.thresholds, default_policy_name=args.threshold_policy)
+    experiment_settings = replace(
+        DEFAULT_SETTINGS.experiment,
+        probability_calibration_method=args.probability_calibration,
+    )
     return replace(
         DEFAULT_SETTINGS,
         data=data_settings,
         model=model_settings,
         backtest=backtest_settings,
+        experiment=experiment_settings,
         thresholds=threshold_settings,
     )
 
@@ -626,6 +675,7 @@ def _train_config_from_args(args: argparse.Namespace) -> TrainPipelineConfig:
         sentiment_features_csv=args.sentiment_features_csv,
         profile_name=args.profile,
         threshold_policy_name=args.threshold_policy,
+        probability_calibration_method=args.probability_calibration,
         auto_discover_companion_inputs=True,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
@@ -646,6 +696,7 @@ def _test_config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
         sentiment_features_csv=args.sentiment_features_csv,
         profile_name=args.profile,
         threshold_policy_name=args.threshold_policy,
+        probability_calibration_method=args.probability_calibration,
         auto_discover_companion_inputs=True,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,

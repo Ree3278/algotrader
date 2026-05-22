@@ -110,25 +110,27 @@ def test_run_feature_ablation_writes_outputs(tmp_path) -> None:
         output_dir=tmp_path / "ablation",
     )
 
-    assert len(results) == 4
+    assert len(results) == 5
     assert list(results["variant"].sort_values()) == [
         "price_plus_regime_plus_trend_state",
         "price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding",
         "price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding",
         "price_plus_regime_plus_trend_state_plus_regime_thresholding",
+        "price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt",
     ]
     feature_counts = dict(zip(results["variant"], results["feature_count"]))
     assert feature_counts["price_plus_regime_plus_trend_state"] == 17
     assert feature_counts["price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding"] == 18
     assert feature_counts["price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding"] == 17
     assert feature_counts["price_plus_regime_plus_trend_state_plus_regime_thresholding"] == 17
+    assert feature_counts["price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt"] == 17
     assert paths["csv"].exists()
     assert paths["json"].exists()
     assert paths["summary"].exists()
 
     summary = json.loads(paths["summary"].read_text(encoding="utf-8"))
     assert summary["best_by_mean_sharpe"] is not None
-    assert len(summary["variants"]) == 4
+    assert len(summary["variants"]) == 5
 
     threshold_manifest = json.loads(
         (tmp_path / "ablation" / "runs" / "price_plus_regime_plus_trend_state_plus_regime_thresholding" / "models" / "manifest.json").read_text(encoding="utf-8")
@@ -138,6 +140,10 @@ def test_run_feature_ablation_writes_outputs(tmp_path) -> None:
         (tmp_path / "ablation" / "runs" / "price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding" / "models" / "manifest.json").read_text(encoding="utf-8")
     )
     assert constrained_manifest["threshold_policy_name"] == "trend_regime_constrained"
+    platt_manifest = json.loads(
+        (tmp_path / "ablation" / "runs" / "price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt" / "models" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert platt_manifest["probability_calibration_method"] == "platt"
     atr_manifest = json.loads(
         (tmp_path / "ablation" / "runs" / "price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding" / "models" / "manifest.json").read_text(encoding="utf-8")
     )

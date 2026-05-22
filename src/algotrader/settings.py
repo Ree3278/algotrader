@@ -120,6 +120,7 @@ class ExperimentSettings:
     calibration_fraction: float = 0.2
     min_calibration_size: int = 20
     min_training_size: int = 30
+    probability_calibration_method: str = "none"
 
 
 @dataclass(frozen=True)
@@ -157,6 +158,7 @@ class ProjectSettings:
             min_calibration_size=self.experiment.min_calibration_size,
             min_training_size=self.experiment.min_training_size,
             threshold_policy_name=self.thresholds.default_policy_name,
+            probability_calibration_method=self.experiment.probability_calibration_method,
         )
 
 

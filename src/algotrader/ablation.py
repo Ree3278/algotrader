@@ -28,6 +28,7 @@ class AblationVariant:
     name: str
     profile_name: str
     threshold_policy_name: str = DEFAULT_SETTINGS.thresholds.default_policy_name
+    probability_calibration_method: str = DEFAULT_SETTINGS.experiment.probability_calibration_method
 
 
 ABLATION_VARIANTS = (
@@ -38,15 +39,21 @@ ABLATION_VARIANTS = (
         threshold_policy_name="trend_regime",
     ),
     AblationVariant(
-        name="price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding",
+        name="price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt",
         profile_name="price_plus_regime_plus_trend_state",
-        threshold_policy_name="trend_regime_constrained",
-    ),
-    AblationVariant(
-        name="price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding",
-        profile_name="price_plus_regime_plus_trend_state_plus_atr_percentile",
         threshold_policy_name="trend_regime",
+        probability_calibration_method="platt",
     ),
+    # AblationVariant(
+    #     name="price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding",
+    #     profile_name="price_plus_regime_plus_trend_state",
+    #     threshold_policy_name="trend_regime_constrained",
+    # ),
+    # AblationVariant(
+    #     name="price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding",
+    #     profile_name="price_plus_regime_plus_trend_state_plus_atr_percentile",
+    #     threshold_policy_name="trend_regime",
+    # ),
 )
 
 
@@ -113,6 +120,7 @@ def run_feature_ablation(
             sentiment_features_csv=local_base_config.sentiment_features_csv if profile.requires_sentiment else None,
             profile_name=profile.name,
             threshold_policy_name=variant.threshold_policy_name,
+            probability_calibration_method=variant.probability_calibration_method,
             feature_columns=profile.feature_columns,
             auto_discover_companion_inputs=False,
             model_dir=run_root / "models",
@@ -174,6 +182,7 @@ def _config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
         sentiment_features_csv=args.sentiment_features_csv,
         profile_name=args.profile,
         threshold_policy_name=args.threshold_policy,
+        probability_calibration_method=args.probability_calibration,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
         yfinance_start=args.yf_start,

@@ -9,6 +9,7 @@ import pandas as pd
 
 from algotrader.backtest import BacktestConfig, run_long_flat_backtest, summarize_backtest
 from algotrader.thresholds import build_threshold_policy
+from algotrader.training.calibration import apply_probability_calibration, fit_probability_calibrator
 from algotrader.training.dataset import TrainingDataset
 from algotrader.training.walk_forward import PurgedWalkForwardConfig, generate_splits
 from algotrader.training.xgboost_model import XGBoostConfig, train_xgboost_classifier
@@ -24,6 +25,7 @@ class WalkForwardExperimentConfig:
     min_calibration_size: int = 20
     min_training_size: int = 30
     threshold_policy_name: str = "global"
+    probability_calibration_method: str = "none"
 
 
 @dataclass(frozen=True)
@@ -150,6 +152,12 @@ def run_walk_forward_experiment(
                 calibration_model.predict_proba(calibration_data[dataset.feature_columns])[:, 1],
                 index=calibration_data.index,
             )
+            calibrator = fit_probability_calibrator(
+                calibration_probabilities,
+                calibration_data[dataset.target_column],
+                method=config.probability_calibration_method,
+            )
+            calibration_probabilities = apply_probability_calibration(calibrator, calibration_probabilities)
             threshold_selection = select_thresholds(
                 price_frame,
                 calibration_data,

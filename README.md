@@ -43,6 +43,7 @@ That file is the source of truth for:
 - model defaults
 - backtest costs and threshold defaults
 - experiment calibration settings
+- probability calibration defaults
 - default model profile
 - default threshold policy
 
@@ -60,6 +61,10 @@ Current default model profile:
 Current default threshold policy:
 
 - `global`
+
+Current default probability calibration:
+
+- `none`
 
 ## Model Profiles
 
@@ -108,6 +113,17 @@ Available policies:
 - `bull_stressed`
 - `other_calm`
 - `other_stressed`
+
+## Probability Calibration
+
+Probability calibration is toggleable through settings and CLI.
+
+Available options:
+
+- `none`
+- `platt`
+
+`platt` fits a fold-level logistic calibration model on the calibration slice and applies threshold selection to calibrated probabilities.
 
 ## Fetch Data
 
@@ -178,6 +194,15 @@ To try regime-conditional thresholding on the current baseline:
 
 ```bash
 uv run --extra research algotrader-train --threshold-policy trend_regime
+uv run --extra research algotrader-test
+```
+
+To try Platt calibration on the same baseline:
+
+```bash
+uv run --extra research algotrader-train \
+  --threshold-policy trend_regime \
+  --probability-calibration platt
 uv run --extra research algotrader-test
 ```
 
@@ -286,6 +311,7 @@ The ablation now also includes a threshold-policy comparison on the `price_plus_
 
 - `price_plus_regime_plus_trend_state`
 - `price_plus_regime_plus_trend_state_plus_regime_thresholding`
+- `price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt`
 - `price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding`
 - `price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding`
 
