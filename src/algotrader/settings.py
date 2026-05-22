@@ -26,6 +26,17 @@ class PathSettings:
     report_dir: Path = Path("reports/latest")
     news_dir: Path = Path("data/raw/news")
 
+    def default_price_csv(self, symbol: str) -> Path:
+        return self.normalized_data_dir / f"{symbol.lower()}_daily.csv"
+
+    @property
+    def default_vix_csv(self) -> Path:
+        return self.normalized_data_dir / "vix_daily.csv"
+
+    @property
+    def default_sentiment_csv(self) -> Path:
+        return self.normalized_data_dir / "sentiment_daily.csv"
+
 
 @dataclass(frozen=True)
 class LabelSettings:
@@ -112,6 +123,11 @@ class ExperimentSettings:
 
 
 @dataclass(frozen=True)
+class ProfileSettings:
+    default_profile_name: str = "price_plus_regime_plus_trend_state"
+
+
+@dataclass(frozen=True)
 class ProjectSettings:
     data: DataSettings = DataSettings()
     paths: PathSettings = PathSettings()
@@ -120,6 +136,7 @@ class ProjectSettings:
     model: ModelSettings = ModelSettings()
     backtest: BacktestSettings = BacktestSettings()
     experiment: ExperimentSettings = ExperimentSettings()
+    profiles: ProfileSettings = ProfileSettings()
 
     def build_label_config(self) -> TripleBarrierConfig:
         return self.labels.build()

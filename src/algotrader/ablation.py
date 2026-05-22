@@ -18,60 +18,26 @@ from algotrader.pipeline import (
     _settings_from_args,
     run_pipeline,
 )
-from algotrader.reporting import to_json_safe
-from algotrader.training.dataset import (
-    DEFAULT_FEATURE_COLUMNS,
-    REGIME_FEATURE_COLUMNS,
-    SENTIMENT_FEATURE_COLUMNS,
-    TREND_STATE_FEATURE_COLUMNS,
-    VOL_STATE_FEATURE_COLUMNS,
-)
+from algotrader.settings import DEFAULT_SETTINGS
+from algotrader.profiles import build_model_profile
+from algotrader.reporting import format_ablation_results_table, to_json_safe
 
 
 @dataclass(frozen=True)
 class AblationVariant:
     name: str
-    use_vix: bool
-    use_sentiment: bool
-    feature_columns: tuple[str, ...]
+    profile_name: str
 
 
 ABLATION_VARIANTS = (
-    # AblationVariant(
-    #     name="price_only",
-    #     use_vix=False,
-    #     use_sentiment=False,
-    #     feature_columns=tuple(DEFAULT_FEATURE_COLUMNS),
-    # ),
-    AblationVariant(
-        name="price_plus_regime",
-        use_vix=True,
-        use_sentiment=False,
-        feature_columns=tuple(DEFAULT_FEATURE_COLUMNS + REGIME_FEATURE_COLUMNS),
-    ),
-    AblationVariant(
-        name="price_plus_regime_plus_trend_state",
-        use_vix=True,
-        use_sentiment=False,
-        feature_columns=tuple(DEFAULT_FEATURE_COLUMNS + REGIME_FEATURE_COLUMNS + TREND_STATE_FEATURE_COLUMNS),
-    ),
+    AblationVariant(name="price_only", profile_name="price_only"),
+    AblationVariant(name="price_plus_regime", profile_name="price_plus_regime"),
+    AblationVariant(name="price_plus_regime_plus_trend_state", profile_name="price_plus_regime_plus_trend_state"),
     AblationVariant(
         name="price_plus_regime_plus_trend_state_plus_vol_state",
-        use_vix=True,
-        use_sentiment=False,
-        feature_columns=tuple(
-            DEFAULT_FEATURE_COLUMNS
-            + REGIME_FEATURE_COLUMNS
-            + TREND_STATE_FEATURE_COLUMNS
-            + VOL_STATE_FEATURE_COLUMNS
-        ),
+        profile_name="price_plus_regime_plus_trend_state_plus_vol_state",
     ),
-    # AblationVariant(
-    #     name="price_plus_regime_plus_sentiment",
-    #     use_vix=True,
-    #     use_sentiment=True,
-    #     feature_columns=tuple(DEFAULT_FEATURE_COLUMNS + REGIME_FEATURE_COLUMNS + SENTIMENT_FEATURE_COLUMNS),
-    # ),
+    AblationVariant(name="price_plus_regime_plus_sentiment", profile_name="price_plus_regime_plus_sentiment"),
 )
 
 
@@ -109,18 +75,7 @@ def _materialize_local_inputs(
 
 
 def _top_result_lines(results: pd.DataFrame) -> list[str]:
-    lines = ["Ablation results:"]
-    for row in results.sort_values(by="mean_sharpe", ascending=False).itertuples(index=False):
-        lines.append(
-            "  "
-            f"{row.variant}: "
-            f"sharpe={row.mean_sharpe:.3f}, "
-            f"return={100 * row.mean_total_return:.2f}%, "
-            f"dd={100 * row.mean_max_drawdown:.2f}%, "
-            f"trades={row.mean_trade_count:.2f}, "
-            f"features={row.feature_count}"
-        )
-    return lines
+    return [format_ablation_results_table(results)]
 
 
 def run_feature_ablation(
@@ -136,17 +91,19 @@ def run_feature_ablation(
 
     rows: list[dict[str, object]] = []
     for variant in ABLATION_VARIANTS:
-        if variant.use_vix and local_base_config.vix_input_csv is None:
+        profile = build_model_profile(name=variant.profile_name)
+        if profile.requires_vix and local_base_config.vix_input_csv is None:
             raise ValueError("VIX input is required for regime ablation variants")
-        if variant.use_sentiment and local_base_config.sentiment_features_csv is None:
+        if profile.requires_sentiment and local_base_config.sentiment_features_csv is None:
             raise ValueError("Sentiment input is required for sentiment ablation variant")
 
         run_root = destination / "runs" / variant.name
         run_config = replace(
             local_base_config,
-            vix_input_csv=local_base_config.vix_input_csv if variant.use_vix else None,
-            sentiment_features_csv=local_base_config.sentiment_features_csv if variant.use_sentiment else None,
-            feature_columns=list(variant.feature_columns),
+            vix_input_csv=local_base_config.vix_input_csv if profile.requires_vix else None,
+            sentiment_features_csv=local_base_config.sentiment_features_csv if profile.requires_sentiment else None,
+            profile_name=profile.name,
+            feature_columns=profile.feature_columns,
             auto_discover_companion_inputs=False,
             model_dir=run_root / "models",
             output_dir=run_root / "reports",
@@ -202,9 +159,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def _config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
     return TestPipelineConfig(
         symbol=args.symbol,
-        input_csv=args.input_csv,
+        input_csv=args.input_csv or DEFAULT_SETTINGS.paths.default_price_csv(args.symbol),
         vix_input_csv=args.vix_csv,
         sentiment_features_csv=args.sentiment_features_csv,
+        profile_name=args.profile,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
         yfinance_start=args.yf_start,

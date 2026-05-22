@@ -21,6 +21,7 @@ from algotrader.pipeline import (
     run_pipeline,
 )
 from algotrader.reporting import to_json_safe
+from algotrader.settings import DEFAULT_SETTINGS
 
 
 @dataclass(frozen=True)
@@ -255,9 +256,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def _config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
     return TestPipelineConfig(
         symbol=args.symbol,
-        input_csv=args.input_csv,
+        input_csv=args.input_csv or DEFAULT_SETTINGS.paths.default_price_csv(args.symbol),
         vix_input_csv=args.vix_csv,
         sentiment_features_csv=args.sentiment_features_csv,
+        profile_name=args.profile,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
         yfinance_start=args.yf_start,

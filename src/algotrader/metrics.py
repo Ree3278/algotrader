@@ -12,6 +12,7 @@ import pandas as pd
 
 from algotrader.ingestion import load_ohlcv_csv
 from algotrader.ingestion import load_timeseries_csv
+from algotrader.labels import TripleBarrierConfig
 from algotrader.training.artifacts import load_model_artifact, load_training_manifest
 from algotrader.training.dataset import build_training_dataset
 
@@ -30,11 +31,18 @@ def compute_debug_metrics(
 ) -> dict[str, Any]:
     """Compute label mix, fold Sharpe chronology, and feature importances."""
 
+    manifest, fold_manifest = load_training_manifest(model_dir)
     price_frame = load_ohlcv_csv(input_csv)
     vix_frame = load_ohlcv_csv(vix_csv) if vix_csv is not None else None
     sentiment_frame = load_timeseries_csv(sentiment_features_csv) if sentiment_features_csv is not None else None
-    dataset = build_training_dataset(price_frame, vix_frame=vix_frame, sentiment_frame=sentiment_frame)
-    manifest, fold_manifest = load_training_manifest(model_dir)
+    label_config = TripleBarrierConfig(**manifest["label_config"]) if manifest.get("label_config") else None
+    dataset = build_training_dataset(
+        price_frame,
+        vix_frame=vix_frame,
+        sentiment_frame=sentiment_frame,
+        label_config=label_config,
+        feature_columns=manifest["feature_columns"],
+    )
     reports_path = Path(reports_dir)
     fold_summaries = pd.read_csv(reports_path / "fold_summaries.csv")
 

@@ -128,3 +128,37 @@ def format_test_terminal_summary(
         *_format_distribution_lines(hit_reason_distribution),
     ]
     return "\n".join(lines)
+
+
+def format_ablation_results_table(results: pd.DataFrame) -> str:
+    """Render an aligned ablation comparison table for terminal output."""
+
+    if results.empty:
+        return "No ablation results."
+
+    display = results.copy()
+    display["mean_total_return"] = display["mean_total_return"].map(lambda value: f"{100 * float(value):.2f}%")
+    display["mean_sharpe"] = display["mean_sharpe"].map(lambda value: f"{float(value):.3f}")
+    display["mean_max_drawdown"] = display["mean_max_drawdown"].map(lambda value: f"{100 * float(value):.2f}%")
+    display["mean_trade_count"] = display["mean_trade_count"].map(lambda value: f"{float(value):.2f}")
+    display["feature_count"] = display["feature_count"].map(lambda value: str(int(value)))
+
+    columns = [
+        ("variant", "Variant"),
+        ("mean_sharpe", "Sharpe"),
+        ("mean_total_return", "Return"),
+        ("mean_max_drawdown", "Drawdown"),
+        ("mean_trade_count", "Trades"),
+        ("feature_count", "Features"),
+    ]
+    widths = {
+        key: max(len(header), display[key].astype(str).map(len).max())
+        for key, header in columns
+    }
+    header_line = "  ".join(header.ljust(widths[key]) for key, header in columns)
+    separator_line = "  ".join("-" * widths[key] for key, _ in columns)
+    row_lines = [
+        "  ".join(str(row[key]).ljust(widths[key]) for key, _ in columns)
+        for row in display.to_dict(orient="records")
+    ]
+    return "\n".join([header_line, separator_line, *row_lines])

@@ -43,6 +43,7 @@ That file is the source of truth for:
 - model defaults
 - backtest costs and threshold defaults
 - experiment calibration settings
+- default model profile
 
 Current default label geometry:
 
@@ -51,12 +52,38 @@ Current default label geometry:
 - `max_holding_bars = 10`
 - `timeout_return_threshold = 0.0`
 
+Current default model profile:
+
+- `price_plus_regime_plus_trend_state`
+
+## Model Profiles
+
+Feature improvements are now composed as reusable blocks in `src/algotrader/profiles.py`.
+
+Available blocks:
+
+- `price_only`
+- `regime`
+- `trend_state`
+- `vol_state`
+- `sentiment`
+
+Preset profiles:
+
+- `price_only`
+- `price_plus_regime`
+- `price_plus_regime_plus_trend_state`
+- `price_plus_regime_plus_trend_state_plus_vol_state`
+- `price_plus_regime_plus_sentiment`
+
+The CLI uses `--profile` to select one of these presets. If you do not pass `--profile`, the default is `price_plus_regime_plus_trend_state`.
+
 ## Fetch Data
 
 Download normalized daily OHLCV with `yfinance`:
 
 ```bash
-uv run algotrader-fetch-yf --symbol SPY --output-csv data/interim/spy_daily.csv
+uv run algotrader-fetch-yf
 ```
 
 This also writes normalized VIX data by default to `data/interim/vix_daily.csv`.
@@ -101,16 +128,22 @@ Optional raw news columns:
 Train fold models from local CSV:
 
 ```bash
-uv run --extra research algotrader-train --input-csv data/interim/spy_daily.csv
+uv run --extra research algotrader-train
 ```
 
-If `data/interim/vix_daily.csv` exists beside the SPY CSV, it is picked up automatically. You can also pass it explicitly:
+By default this uses:
+
+- `data/interim/spy_daily.csv`
+- companion `data/interim/vix_daily.csv` if the selected profile needs it
+- companion `data/interim/sentiment_daily.csv` if the selected profile needs it
+
+To train a different preset profile:
 
 ```bash
-uv run --extra research algotrader-train --input-csv data/interim/spy_daily.csv --vix-csv data/interim/vix_daily.csv
+uv run --extra research algotrader-train --profile price_plus_regime
 ```
 
-To include sentiment features:
+You can still override paths explicitly if needed:
 
 ```bash
 uv run --extra research algotrader-train \
@@ -136,7 +169,7 @@ Training artifacts are written under `models/latest/` by default:
 Evaluate saved fold models and write reports:
 
 ```bash
-uv run --extra research algotrader-test --input-csv data/interim/spy_daily.csv --model-dir models/latest
+uv run --extra research algotrader-test
 ```
 
 The terminal output now prints a compact summary with:
@@ -148,33 +181,11 @@ The terminal output now prints a compact summary with:
 - label distribution
 - hit-reason distribution
 
-If the saved model was trained with VIX features, provide the same VIX CSV or keep `vix_daily.csv` beside the SPY file.
-
-If the saved model was trained with sentiment features, provide the same `sentiment_daily.csv`:
-
-```bash
-uv run --extra research algotrader-test \
-  --input-csv data/interim/spy_daily.csv \
-  --vix-csv data/interim/vix_daily.csv \
-  --sentiment-features-csv data/interim/sentiment_daily.csv \
-  --model-dir models/latest
-```
+The test pipeline now reloads the saved profile and feature list from the training manifest, so in the common case you do not need to repeat those details manually.
 
 ## Inspect Metrics
 
 Compute the debugging metrics for a saved run:
-
-```bash
-uv run --extra research algotrader-metrics --input-csv data/interim/spy_daily.csv --model-dir models/latest --reports-dir reports/latest
-```
-
-If the run used VIX features:
-
-```bash
-uv run --extra research algotrader-metrics --input-csv data/interim/spy_daily.csv --vix-csv data/interim/vix_daily.csv --model-dir models/latest --reports-dir reports/latest
-```
-
-If the run used sentiment features too:
 
 ```bash
 uv run --extra research algotrader-metrics \
@@ -197,10 +208,7 @@ This prints:
 Run a controlled sweep over the triple-barrier label geometry:
 
 ```bash
-uv run --extra research algotrader-label-sweep \
-  --input-csv data/interim/spy_daily.csv \
-  --vix-csv data/interim/vix_daily.csv \
-  --sentiment-features-csv data/interim/sentiment_daily.csv
+uv run --extra research algotrader-label-sweep
 ```
 
 Default sweep grid:
@@ -221,7 +229,7 @@ To run a smaller sweep:
 
 ```bash
 uv run --extra research algotrader-label-sweep \
-  --input-csv data/interim/spy_daily.csv \
+  --profile price_only \
   --profit-target-atrs 1.0 1.25 \
   --stop-loss-atrs 1.0 1.25 \
   --max-holding-bars 5 10 \
@@ -230,13 +238,10 @@ uv run --extra research algotrader-label-sweep \
 
 ## Feature Ablation
 
-Compare the three feature variants under the same label configuration:
+Compare the preset feature profiles under the same label configuration:
 
 ```bash
-uv run --extra research algotrader-ablation \
-  --input-csv data/interim/spy_daily.csv \
-  --vix-csv data/interim/vix_daily.csv \
-  --sentiment-features-csv data/interim/sentiment_daily.csv
+uv run --extra research algotrader-ablation
 ```
 
 This runs:
@@ -253,6 +258,8 @@ and writes:
 - `ablation_results.json`
 - `ablation_summary.json`
 
+The terminal output is now a fixed-width comparison table so you can scan metrics across profiles quickly.
+
 The trend-state variant adds richer SMA context on top of the regime baseline:
 
 - `price_to_sma_200`
@@ -267,10 +274,10 @@ The volatility-state variant adds:
 
 ## Combined Run
 
-Local CSV:
+Local default CSV:
 
 ```bash
-uv run --extra research algotrader-run --input-csv data/interim/spy_daily.csv
+uv run --extra research algotrader-run
 ```
 
 Alpha Vantage:

@@ -23,6 +23,7 @@ from algotrader.ingestion import (
     save_ohlcv_csv,
 )
 from algotrader.labels import TripleBarrierConfig
+from algotrader.profiles import build_model_profile, list_profile_names
 from algotrader.reporting import build_experiment_summary, format_test_terminal_summary, write_experiment_reports
 from algotrader.settings import DEFAULT_SETTINGS, ProjectSettings
 from algotrader.training.artifacts import (
@@ -31,7 +32,12 @@ from algotrader.training.artifacts import (
     save_model_artifact,
     save_training_manifest,
 )
-from algotrader.training.dataset import TrainingDataset, build_training_dataset
+from algotrader.training.dataset import (
+    REGIME_FEATURE_COLUMNS,
+    SENTIMENT_FEATURE_COLUMNS,
+    TrainingDataset,
+    build_training_dataset,
+)
 from algotrader.training.experiment import (
     WalkForwardExperimentConfig,
     WalkForwardExperimentResult,
@@ -44,10 +50,11 @@ from algotrader.training.xgboost_model import train_xgboost_classifier
 @dataclass(frozen=True)
 class PipelineConfig:
     symbol: str = DEFAULT_SETTINGS.data.symbol
-    input_csv: Path | None = None
+    input_csv: Path | None = DEFAULT_SETTINGS.paths.default_price_csv(DEFAULT_SETTINGS.data.symbol)
     vix_input_csv: Path | None = None
     sentiment_features_csv: Path | None = None
     feature_columns: list[str] | None = None
+    profile_name: str = DEFAULT_SETTINGS.profiles.default_profile_name
     auto_discover_companion_inputs: bool = True
     fetch_yfinance: bool = False
     yfinance_period: str = "max"
@@ -113,12 +120,24 @@ def _default_sentiment_filename() -> str:
     return "sentiment_daily.csv"
 
 
+def _default_input_csv(symbol: str) -> Path:
+    return DEFAULT_SETTINGS.paths.default_price_csv(symbol)
+
+
+def _default_vix_output_csv() -> Path:
+    return DEFAULT_SETTINGS.paths.default_vix_csv
+
+
 def _resolved_experiment_config(config: PipelineConfig) -> WalkForwardExperimentConfig:
     return config.experiment_config or config.settings.build_experiment_config()
 
 
 def _resolved_label_config(config: PipelineConfig):
     return config.settings.build_label_config()
+
+
+def _resolved_profile(config: PipelineConfig):
+    return build_model_profile(name=config.profile_name)
 
 
 def _resolve_vix_input_csv(config: PipelineConfig) -> Path | None:
@@ -208,12 +227,20 @@ def _build_dataset(
     sentiment_frame: pd.DataFrame | None = None,
     label_config: TripleBarrierConfig | None = None,
 ) -> TrainingDataset:
+    profile = _resolved_profile(config)
+    selected_feature_columns = config.feature_columns or profile.feature_columns
+    requires_vix = any(column in REGIME_FEATURE_COLUMNS for column in selected_feature_columns)
+    requires_sentiment = any(column in SENTIMENT_FEATURE_COLUMNS for column in selected_feature_columns)
+    if requires_vix and vix_frame is None:
+        raise ValueError(f"Profile '{profile.name}' requires VIX input, but no VIX data was available")
+    if requires_sentiment and sentiment_frame is None:
+        raise ValueError(f"Profile '{profile.name}' requires sentiment input, but no sentiment data was available")
     dataset = build_training_dataset(
         price_frame,
         vix_frame=vix_frame,
         sentiment_frame=sentiment_frame,
         label_config=label_config or _resolved_label_config(config),
-        feature_columns=config.feature_columns,
+        feature_columns=selected_feature_columns,
     )
     if dataset.data.empty:
         raise ValueError("Training dataset is empty after feature warmup and label construction")
@@ -301,6 +328,8 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
         "created_at": datetime.now(timezone.utc).isoformat(),
         "dataset_rows": int(len(dataset.data)),
         "feature_columns": dataset.feature_columns,
+        "profile_name": config.profile_name,
+        "profile_blocks": _resolved_profile(config).block_names,
         "target_column": dataset.target_column,
         "input_csv": str(config.input_csv) if config.input_csv is not None else None,
         "vix_input_csv": str(config.vix_input_csv) if config.vix_input_csv is not None else None,
@@ -330,11 +359,16 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
 
     price_frame, vix_frame, sentiment_frame = _load_or_fetch_frames(config)
     manifest, fold_manifest = load_training_manifest(config.model_dir)
+    dataset_config = replace(
+        config,
+        profile_name=manifest.get("profile_name", config.profile_name),
+        feature_columns=manifest.get("feature_columns"),
+    )
     label_config = None
     if manifest.get("label_config") is not None:
         label_config = TripleBarrierConfig(**manifest["label_config"])
     dataset = _build_dataset(
-        config,
+        dataset_config,
         price_frame,
         vix_frame=vix_frame,
         sentiment_frame=sentiment_frame,
@@ -433,6 +467,7 @@ def run_pipeline(config: TestPipelineConfig) -> TestRunResult:
         vix_input_csv=config.vix_input_csv,
         sentiment_features_csv=config.sentiment_features_csv,
         feature_columns=config.feature_columns,
+        profile_name=config.profile_name,
         auto_discover_companion_inputs=config.auto_discover_companion_inputs,
         fetch_yfinance=config.fetch_yfinance,
         yfinance_period=config.yfinance_period,
@@ -486,6 +521,7 @@ def _add_shared_data_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_shared_model_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--profile", default=DEFAULT_SETTINGS.profiles.default_profile_name, choices=list_profile_names())
     parser.add_argument("--backend", default=DEFAULT_SETTINGS.model.backend, choices=["auto", "xgboost", "hist_gradient_boosting"])
     parser.add_argument("--threshold", type=float, default=DEFAULT_SETTINGS.backtest.probability_threshold, help="Default probability threshold")
     parser.add_argument("--commission-bps", type=float, default=DEFAULT_SETTINGS.backtest.commission_bps, help="Commission in basis points")
@@ -524,8 +560,8 @@ def build_test_arg_parser() -> argparse.ArgumentParser:
 def build_fetch_yfinance_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Fetch and normalize daily OHLCV data from yfinance.")
     parser.add_argument("--symbol", default=DEFAULT_SETTINGS.data.symbol, help="Ticker symbol to download")
-    parser.add_argument("--output-csv", type=Path, default=DEFAULT_SETTINGS.paths.normalized_data_dir / "spy_daily.csv", help="Output CSV path")
-    parser.add_argument("--vix-output-csv", type=Path, default=DEFAULT_SETTINGS.paths.normalized_data_dir / _default_vix_filename(), help="Optional output CSV path for normalized VIX data")
+    parser.add_argument("--output-csv", type=Path, help="Output CSV path")
+    parser.add_argument("--vix-output-csv", type=Path, help="Optional output CSV path for normalized VIX data")
     parser.add_argument("--period", default="max", help="yfinance period, e.g. max, 10y, 5y")
     parser.add_argument("--start", help="Optional yfinance start date, YYYY-MM-DD")
     parser.add_argument("--end", help="Optional yfinance end date, YYYY-MM-DD")
@@ -535,9 +571,10 @@ def build_fetch_yfinance_arg_parser() -> argparse.ArgumentParser:
 def _train_config_from_args(args: argparse.Namespace) -> TrainPipelineConfig:
     return TrainPipelineConfig(
         symbol=args.symbol,
-        input_csv=args.input_csv,
+        input_csv=args.input_csv or _default_input_csv(args.symbol),
         vix_input_csv=args.vix_csv,
         sentiment_features_csv=args.sentiment_features_csv,
+        profile_name=args.profile,
         auto_discover_companion_inputs=True,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
@@ -553,9 +590,10 @@ def _train_config_from_args(args: argparse.Namespace) -> TrainPipelineConfig:
 def _test_config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
     return TestPipelineConfig(
         symbol=args.symbol,
-        input_csv=args.input_csv,
+        input_csv=args.input_csv or _default_input_csv(args.symbol),
         vix_input_csv=args.vix_csv,
         sentiment_features_csv=args.sentiment_features_csv,
+        profile_name=args.profile,
         auto_discover_companion_inputs=True,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
@@ -588,8 +626,8 @@ def fetch_yfinance_main() -> None:
     args = parser.parse_args()
     output, vix_output = run_fetch_yfinance(
         args.symbol,
-        args.output_csv,
-        vix_output_csv=args.vix_output_csv,
+        args.output_csv or _default_input_csv(args.symbol),
+        vix_output_csv=args.vix_output_csv or _default_vix_output_csv(),
         period=args.period,
         start=args.start,
         end=args.end,

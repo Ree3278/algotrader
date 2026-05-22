@@ -65,6 +65,7 @@ def test_run_label_sweep_writes_aggregate_outputs(tmp_path) -> None:
         TestPipelineConfig(
             symbol="SPY",
             input_csv=input_csv,
+            profile_name="price_only",
             experiment_config=_experiment_config(),
         ),
         output_dir=tmp_path / "label_sweep",
