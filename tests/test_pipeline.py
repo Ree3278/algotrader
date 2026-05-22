@@ -334,6 +334,7 @@ def test_train_and_test_pipeline_accepts_sentiment_features_csv(tmp_path) -> Non
             vix_input_csv=vix_csv,
             sentiment_features_csv=sentiment_csv,
             profile_name="price_plus_regime_plus_sentiment",
+            threshold_policy_name="global",
             model_dir=model_dir,
             experiment_config=_experiment_config(),
         )
@@ -345,6 +346,7 @@ def test_train_and_test_pipeline_accepts_sentiment_features_csv(tmp_path) -> Non
             vix_input_csv=vix_csv,
             sentiment_features_csv=sentiment_csv,
             profile_name="price_plus_regime_plus_sentiment",
+            threshold_policy_name="global",
             model_dir=model_dir,
             output_dir=output_dir,
             experiment_config=_experiment_config(),

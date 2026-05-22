@@ -60,11 +60,17 @@ Current default model profile:
 
 Current default threshold policy:
 
-- `global`
+- `trend_regime`
 
 Current default probability calibration:
 
 - `none`
+
+The repo defaults now reflect the frozen baseline:
+
+- profile: `price_plus_regime_plus_trend_state`
+- threshold policy: `trend_regime`
+- probability calibration: `none`
 
 ## Model Profiles
 
@@ -245,6 +251,29 @@ The terminal output now prints a compact summary with:
 - hit-reason distribution
 
 The test pipeline now reloads the saved profile and feature list from the training manifest, so in the common case you do not need to repeat those details manually.
+
+## Frozen Holdout
+
+Once you stop tuning, evaluate the frozen baseline on a final untouched holdout slice:
+
+```bash
+uv run --extra research algotrader-holdout
+```
+
+Defaults:
+
+- profile: `price_plus_regime_plus_trend_state`
+- threshold policy: `trend_regime`
+- probability calibration: `none`
+- holdout size: `252` labeled rows
+
+Optional example:
+
+```bash
+uv run --extra research algotrader-holdout --holdout-size 252
+```
+
+This writes reports under `reports/holdout/latest/`.
 
 ## Inspect Metrics
 

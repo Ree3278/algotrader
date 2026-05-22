@@ -66,6 +66,7 @@ def test_run_label_sweep_writes_aggregate_outputs(tmp_path) -> None:
             symbol="SPY",
             input_csv=input_csv,
             profile_name="price_only",
+            threshold_policy_name="global",
             experiment_config=_experiment_config(),
         ),
         output_dir=tmp_path / "label_sweep",

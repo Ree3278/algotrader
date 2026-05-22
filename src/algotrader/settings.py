@@ -24,6 +24,7 @@ class PathSettings:
     normalized_data_dir: Path = Path("data/interim")
     model_dir: Path = Path("models/latest")
     report_dir: Path = Path("reports/latest")
+    holdout_report_dir: Path = Path("reports/holdout/latest")
     news_dir: Path = Path("data/raw/news")
 
     def default_price_csv(self, symbol: str) -> Path:
@@ -130,7 +131,12 @@ class ProfileSettings:
 
 @dataclass(frozen=True)
 class ThresholdPolicySettings:
-    default_policy_name: str = "global"
+    default_policy_name: str = "trend_regime"
+
+
+@dataclass(frozen=True)
+class HoldoutSettings:
+    size: int = 252
 
 
 @dataclass(frozen=True)
@@ -144,6 +150,7 @@ class ProjectSettings:
     experiment: ExperimentSettings = ExperimentSettings()
     profiles: ProfileSettings = ProfileSettings()
     thresholds: ThresholdPolicySettings = ThresholdPolicySettings()
+    holdout: HoldoutSettings = HoldoutSettings()
 
     def build_label_config(self) -> TripleBarrierConfig:
         return self.labels.build()

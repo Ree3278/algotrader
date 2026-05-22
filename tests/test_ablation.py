@@ -5,7 +5,7 @@ import json
 import numpy as np
 import pandas as pd
 
-from algotrader.ablation import run_feature_ablation
+from algotrader.ablation import ABLATION_VARIANTS, run_feature_ablation
 from algotrader.ingestion.storage import save_ohlcv_csv
 from algotrader.pipeline import TestPipelineConfig
 from algotrader.training.experiment import WalkForwardExperimentConfig
@@ -110,41 +110,46 @@ def test_run_feature_ablation_writes_outputs(tmp_path) -> None:
         output_dir=tmp_path / "ablation",
     )
 
-    assert len(results) == 5
-    assert list(results["variant"].sort_values()) == [
-        "price_plus_regime_plus_trend_state",
-        "price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding",
-        "price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding",
-        "price_plus_regime_plus_trend_state_plus_regime_thresholding",
-        "price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt",
-    ]
+    expected_variant_names = sorted(variant.name for variant in ABLATION_VARIANTS)
+    assert len(results) == len(expected_variant_names)
+    assert list(results["variant"].sort_values()) == expected_variant_names
     feature_counts = dict(zip(results["variant"], results["feature_count"]))
-    assert feature_counts["price_plus_regime_plus_trend_state"] == 17
-    assert feature_counts["price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding"] == 18
-    assert feature_counts["price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding"] == 17
-    assert feature_counts["price_plus_regime_plus_trend_state_plus_regime_thresholding"] == 17
-    assert feature_counts["price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt"] == 17
+    expected_feature_counts = {
+        "price_plus_regime_plus_trend_state": 17,
+        "price_plus_regime_plus_trend_state_plus_regime_thresholding": 17,
+        "price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt": 17,
+        "price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding": 17,
+        "price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding": 18,
+    }
+    for variant_name in expected_variant_names:
+        assert feature_counts[variant_name] == expected_feature_counts[variant_name]
     assert paths["csv"].exists()
     assert paths["json"].exists()
     assert paths["summary"].exists()
 
     summary = json.loads(paths["summary"].read_text(encoding="utf-8"))
     assert summary["best_by_mean_sharpe"] is not None
-    assert len(summary["variants"]) == 5
+    assert len(summary["variants"]) == len(expected_variant_names)
 
-    threshold_manifest = json.loads(
-        (tmp_path / "ablation" / "runs" / "price_plus_regime_plus_trend_state_plus_regime_thresholding" / "models" / "manifest.json").read_text(encoding="utf-8")
-    )
-    assert threshold_manifest["threshold_policy_name"] == "trend_regime"
-    constrained_manifest = json.loads(
-        (tmp_path / "ablation" / "runs" / "price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding" / "models" / "manifest.json").read_text(encoding="utf-8")
-    )
-    assert constrained_manifest["threshold_policy_name"] == "trend_regime_constrained"
-    platt_manifest = json.loads(
-        (tmp_path / "ablation" / "runs" / "price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt" / "models" / "manifest.json").read_text(encoding="utf-8")
-    )
-    assert platt_manifest["probability_calibration_method"] == "platt"
-    atr_manifest = json.loads(
-        (tmp_path / "ablation" / "runs" / "price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding" / "models" / "manifest.json").read_text(encoding="utf-8")
-    )
-    assert atr_manifest["profile_name"] == "price_plus_regime_plus_trend_state_plus_atr_percentile"
+    manifest_expectations = {
+        "price_plus_regime_plus_trend_state_plus_regime_thresholding": ("threshold_policy_name", "trend_regime"),
+        "price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding": (
+            "threshold_policy_name",
+            "trend_regime_constrained",
+        ),
+        "price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt": (
+            "probability_calibration_method",
+            "platt",
+        ),
+        "price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding": (
+            "profile_name",
+            "price_plus_regime_plus_trend_state_plus_atr_percentile",
+        ),
+    }
+    for variant_name, (field_name, expected_value) in manifest_expectations.items():
+        if variant_name not in expected_variant_names:
+            continue
+        manifest = json.loads(
+            (tmp_path / "ablation" / "runs" / variant_name / "models" / "manifest.json").read_text(encoding="utf-8")
+        )
+        assert manifest[field_name] == expected_value

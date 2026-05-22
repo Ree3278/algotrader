@@ -38,6 +38,7 @@ algotrader-fetch-yf = "algotrader.pipeline:fetch_yfinance_main"
 algotrader-metrics = "algotrader.metrics:main"
 algotrader-label-sweep = "algotrader.sweep:main"
 algotrader-ablation = "algotrader.ablation:main"
+algotrader-holdout = "algotrader.holdout:main"
 algotrader-build-sentiment = "algotrader.sentiment.cli:main"
 algotrader-fetch-news = "algotrader.ingestion.alpha_vantage:news_cli_main"
 
