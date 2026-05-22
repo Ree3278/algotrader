@@ -24,6 +24,13 @@ def test_trend_regime_policy_assigns_bull_and_other_labels() -> None:
     assert list(thresholds) == [0.6, 0.5, 0.5]
 
 
+def test_trend_regime_constrained_policy_enforces_monotonic_thresholds() -> None:
+    policy = build_threshold_policy("trend_regime_constrained")
+
+    assert policy.allows_threshold_map({"bull_trend": 0.55, "other": 0.65}) is True
+    assert policy.allows_threshold_map({"bull_trend": 0.65, "other": 0.55}) is False
+
+
 def test_trend_vix_regime_policy_assigns_four_regime_buckets() -> None:
     frame = pd.DataFrame(
         {
@@ -54,4 +61,5 @@ def test_list_threshold_policy_names_includes_global_and_regime_variants() -> No
 
     assert "global" in names
     assert "trend_regime" in names
+    assert "trend_regime_constrained" in names
     assert "trend_vix_regime" in names

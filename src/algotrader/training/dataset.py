@@ -31,6 +31,10 @@ TREND_STATE_FEATURE_COLUMNS = [
     "sma_50_above_sma_200",
 ]
 
+ATR_PERCENTILE_FEATURE_COLUMNS = [
+    "atr_percentile_252d",
+]
+
 VOL_STATE_FEATURE_COLUMNS = [
     "atr_percentile_252d",
     "bb_bandwidth_percentile_252d",

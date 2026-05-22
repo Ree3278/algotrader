@@ -10,6 +10,7 @@ import pandas as pd
 
 
 RegimeAssigner = Callable[[pd.DataFrame], pd.Series]
+ThresholdMapValidator = Callable[[dict[str, float]], bool]
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,7 @@ class ThresholdPolicy:
     regime_names: tuple[str, ...]
     required_columns: tuple[str, ...]
     assigner: RegimeAssigner
+    threshold_map_validator: ThresholdMapValidator | None = None
 
     def assign_regimes(self, frame: pd.DataFrame) -> pd.Series:
         missing = [column for column in self.required_columns if column not in frame.columns]
@@ -39,6 +41,11 @@ class ThresholdPolicy:
             )
         thresholds = regimes.map(threshold_map).astype(float)
         return thresholds, regimes
+
+    def allows_threshold_map(self, threshold_map: dict[str, float]) -> bool:
+        if self.threshold_map_validator is None:
+            return True
+        return bool(self.threshold_map_validator(threshold_map))
 
 
 def _assign_global_regime(frame: pd.DataFrame) -> pd.Series:
@@ -71,6 +78,10 @@ def _assign_trend_vix_regime(frame: pd.DataFrame) -> pd.Series:
     return pd.Series(labels, index=frame.index, dtype="object")
 
 
+def _validate_trend_regime_constrained(threshold_map: dict[str, float]) -> bool:
+    return float(threshold_map["bull_trend"]) <= float(threshold_map["other"])
+
+
 THRESHOLD_POLICIES = {
     "global": ThresholdPolicy(
         name="global",
@@ -83,6 +94,13 @@ THRESHOLD_POLICIES = {
         regime_names=("bull_trend", "other"),
         required_columns=("price_above_sma_200", "sma_50_above_sma_200"),
         assigner=_assign_trend_regime,
+    ),
+    "trend_regime_constrained": ThresholdPolicy(
+        name="trend_regime_constrained",
+        regime_names=("bull_trend", "other"),
+        required_columns=("price_above_sma_200", "sma_50_above_sma_200"),
+        assigner=_assign_trend_regime,
+        threshold_map_validator=_validate_trend_regime_constrained,
     ),
     "trend_vix_regime": ThresholdPolicy(
         name="trend_vix_regime",

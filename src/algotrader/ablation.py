@@ -31,24 +31,22 @@ class AblationVariant:
 
 
 ABLATION_VARIANTS = (
-    # AblationVariant(name="price_only", profile_name="price_only"),
-    # AblationVariant(name="price_plus_regime", profile_name="price_plus_regime"),
     AblationVariant(name="price_plus_regime_plus_trend_state", profile_name="price_plus_regime_plus_trend_state"),
     AblationVariant(
         name="price_plus_regime_plus_trend_state_plus_regime_thresholding",
         profile_name="price_plus_regime_plus_trend_state",
         threshold_policy_name="trend_regime",
     ),
-    # AblationVariant(
-    #     name="price_plus_regime_plus_trend_state_plus_trend_vix_thresholding",
-    #     profile_name="price_plus_regime_plus_trend_state",
-    #     threshold_policy_name="trend_vix_regime",
-    # ),
-    # AblationVariant(
-    #     name="price_plus_regime_plus_trend_state_plus_vol_state",
-    #     profile_name="price_plus_regime_plus_trend_state_plus_vol_state",
-    # ),
-    #AblationVariant(name="price_plus_regime_plus_sentiment", profile_name="price_plus_regime_plus_sentiment"),
+    AblationVariant(
+        name="price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding",
+        profile_name="price_plus_regime_plus_trend_state",
+        threshold_policy_name="trend_regime_constrained",
+    ),
+    AblationVariant(
+        name="price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding",
+        profile_name="price_plus_regime_plus_trend_state_plus_atr_percentile",
+        threshold_policy_name="trend_regime",
+    ),
 )
 
 

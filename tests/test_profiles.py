@@ -18,3 +18,4 @@ def test_list_profile_names_includes_expected_presets() -> None:
 
     assert "price_only" in profile_names
     assert "price_plus_regime_plus_trend_state" in profile_names
+    assert "price_plus_regime_plus_trend_state_plus_atr_percentile" in profile_names

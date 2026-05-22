@@ -82,6 +82,8 @@ def select_thresholds(
             regime: float(threshold)
             for regime, threshold in zip(policy.regime_names, threshold_values, strict=True)
         }
+        if not policy.allows_threshold_map(threshold_map):
+            continue
         threshold_series, _ = policy.build_threshold_series(calibration_data, threshold_map)
         results = run_long_flat_backtest(
             price_frame,
@@ -103,6 +105,11 @@ def select_thresholds(
         if best_score is None or score > best_score:
             best_score = score
             best_thresholds = threshold_map
+
+    if best_score is None:
+        raise ValueError(
+            f"Threshold policy '{threshold_policy_name}' rejected all candidate threshold combinations"
+        )
 
     return ThresholdSelection(
         policy_name=policy.name,

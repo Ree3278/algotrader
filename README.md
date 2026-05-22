@@ -70,6 +70,7 @@ Available blocks:
 - `price_only`
 - `regime`
 - `trend_state`
+- `atr_percentile`
 - `vol_state`
 - `sentiment`
 
@@ -78,6 +79,7 @@ Preset profiles:
 - `price_only`
 - `price_plus_regime`
 - `price_plus_regime_plus_trend_state`
+- `price_plus_regime_plus_trend_state_plus_atr_percentile`
 - `price_plus_regime_plus_trend_state_plus_vol_state`
 - `price_plus_regime_plus_sentiment`
 
@@ -91,9 +93,14 @@ Available policies:
 
 - `global`
 - `trend_regime`
+- `trend_regime_constrained`
 - `trend_vix_regime`
 
 `trend_regime` calibrates one threshold when both `price_above_sma_200` and `sma_50_above_sma_200` are true, and another threshold otherwise.
+
+`trend_regime_constrained` uses the same two buckets, but only allows threshold maps where:
+
+- `bull_trend threshold <= other threshold`
 
 `trend_vix_regime` adds a second split on `vix_zscore_60d`, yielding:
 
@@ -279,7 +286,8 @@ The ablation now also includes a threshold-policy comparison on the `price_plus_
 
 - `price_plus_regime_plus_trend_state`
 - `price_plus_regime_plus_trend_state_plus_regime_thresholding`
-- `price_plus_regime_plus_trend_state_plus_trend_vix_thresholding`
+- `price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding`
+- `price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding`
 
 This runs:
 
