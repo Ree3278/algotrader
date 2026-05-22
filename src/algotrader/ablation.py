@@ -40,6 +40,11 @@ ABLATION_VARIANTS = (
         threshold_policy_name="trend_regime",
     ),
     # AblationVariant(
+    #     name="price_plus_regime_plus_trend_state_plus_trend_vix_thresholding",
+    #     profile_name="price_plus_regime_plus_trend_state",
+    #     threshold_policy_name="trend_vix_regime",
+    # ),
+    # AblationVariant(
     #     name="price_plus_regime_plus_trend_state_plus_vol_state",
     #     profile_name="price_plus_regime_plus_trend_state_plus_vol_state",
     # ),

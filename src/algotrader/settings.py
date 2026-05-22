@@ -116,7 +116,7 @@ class BacktestSettings:
 
 @dataclass(frozen=True)
 class ExperimentSettings:
-    threshold_grid: tuple[float, ...] = (0.5, 0.55, 0.6, 0.65)
+    threshold_grid: tuple[float, ...] = (0.50, 0.55, 0.6, 0.65)
     calibration_fraction: float = 0.2
     min_calibration_size: int = 20
     min_training_size: int = 30

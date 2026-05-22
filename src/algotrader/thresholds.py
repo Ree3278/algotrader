@@ -53,6 +53,24 @@ def _assign_trend_regime(frame: pd.DataFrame) -> pd.Series:
     return pd.Series(labels, index=frame.index, dtype="object")
 
 
+def _assign_trend_vix_regime(frame: pd.DataFrame) -> pd.Series:
+    bullish = (frame["price_above_sma_200"].fillna(0.0) >= 0.5) & (
+        frame["sma_50_above_sma_200"].fillna(0.0) >= 0.5
+    )
+    stressed = frame["vix_zscore_60d"].fillna(0.0) >= 0.0
+
+    labels = np.where(
+        bullish & ~stressed,
+        "bull_calm",
+        np.where(
+            bullish & stressed,
+            "bull_stressed",
+            np.where(~bullish & ~stressed, "other_calm", "other_stressed"),
+        ),
+    )
+    return pd.Series(labels, index=frame.index, dtype="object")
+
+
 THRESHOLD_POLICIES = {
     "global": ThresholdPolicy(
         name="global",
@@ -65,6 +83,12 @@ THRESHOLD_POLICIES = {
         regime_names=("bull_trend", "other"),
         required_columns=("price_above_sma_200", "sma_50_above_sma_200"),
         assigner=_assign_trend_regime,
+    ),
+    "trend_vix_regime": ThresholdPolicy(
+        name="trend_vix_regime",
+        regime_names=("bull_calm", "bull_stressed", "other_calm", "other_stressed"),
+        required_columns=("price_above_sma_200", "sma_50_above_sma_200", "vix_zscore_60d"),
+        assigner=_assign_trend_vix_regime,
     ),
 }
 

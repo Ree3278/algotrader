@@ -91,8 +91,16 @@ Available policies:
 
 - `global`
 - `trend_regime`
+- `trend_vix_regime`
 
 `trend_regime` calibrates one threshold when both `price_above_sma_200` and `sma_50_above_sma_200` are true, and another threshold otherwise.
+
+`trend_vix_regime` adds a second split on `vix_zscore_60d`, yielding:
+
+- `bull_calm`
+- `bull_stressed`
+- `other_calm`
+- `other_stressed`
 
 ## Fetch Data
 
@@ -271,6 +279,7 @@ The ablation now also includes a threshold-policy comparison on the `price_plus_
 
 - `price_plus_regime_plus_trend_state`
 - `price_plus_regime_plus_trend_state_plus_regime_thresholding`
+- `price_plus_regime_plus_trend_state_plus_trend_vix_thresholding`
 
 This runs:
 
