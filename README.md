@@ -44,6 +44,13 @@ That file is the source of truth for:
 - backtest costs and threshold defaults
 - experiment calibration settings
 
+Current default label geometry:
+
+- `profit_target_atr = 1.25`
+- `stop_loss_atr = 1.25`
+- `max_holding_bars = 10`
+- `timeout_return_threshold = 0.0`
+
 ## Fetch Data
 
 Download normalized daily OHLCV with `yfinance`:
@@ -220,6 +227,29 @@ uv run --extra research algotrader-label-sweep \
   --max-holding-bars 5 10 \
   --timeout-thresholds 0.0 0.001
 ```
+
+## Feature Ablation
+
+Compare the three feature variants under the same label configuration:
+
+```bash
+uv run --extra research algotrader-ablation \
+  --input-csv data/interim/spy_daily.csv \
+  --vix-csv data/interim/vix_daily.csv \
+  --sentiment-features-csv data/interim/sentiment_daily.csv
+```
+
+This runs:
+
+- `price_only`
+- `price_plus_regime`
+- `price_plus_regime_plus_sentiment`
+
+and writes:
+
+- `ablation_results.csv`
+- `ablation_results.json`
+- `ablation_summary.json`
 
 ## Combined Run
 

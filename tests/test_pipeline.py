@@ -141,6 +141,9 @@ def test_train_then_test_pipeline_from_local_csv_writes_artifacts(tmp_path) -> N
     assert saved_summary["symbol"] == "SPY"
     assert saved_summary["model_backend"] == "hist_gradient_boosting"
     assert train_result.manifest["label_config"]["max_holding_bars"] == DEFAULT_SETTINGS.labels.max_holding_bars
+    assert train_result.manifest["label_config"]["profit_target_atr"] == DEFAULT_SETTINGS.labels.profit_target_atr
+    assert train_result.manifest["label_config"]["stop_loss_atr"] == DEFAULT_SETTINGS.labels.stop_loss_atr
+    assert train_result.manifest["label_config"]["timeout_return_threshold"] == DEFAULT_SETTINGS.labels.timeout_return_threshold
 
 
 def test_run_pipeline_wrapper_still_executes_train_plus_test(tmp_path) -> None:

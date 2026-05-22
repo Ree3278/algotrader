@@ -29,10 +29,10 @@ class PathSettings:
 
 @dataclass(frozen=True)
 class LabelSettings:
-    profit_target_atr: float = 1.5
-    stop_loss_atr: float = 1.0
+    profit_target_atr: float = 1.25
+    stop_loss_atr: float = 1.25
     max_holding_bars: int = 10
-    timeout_return_threshold: float = 0.001
+    timeout_return_threshold: float = 0.0
     intrabar_tie_break: str = "stop"
 
     def build(self) -> TripleBarrierConfig:
