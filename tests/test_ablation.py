@@ -89,9 +89,9 @@ def _experiment_config() -> WalkForwardExperimentConfig:
 
 
 def test_run_feature_ablation_writes_outputs(tmp_path) -> None:
-    price_frame = _synthetic_price_frame()
-    vix_frame = _synthetic_vix_frame()
-    sentiment_frame = _synthetic_sentiment_frame()
+    price_frame = _synthetic_price_frame(periods=520)
+    vix_frame = _synthetic_vix_frame(periods=520)
+    sentiment_frame = _synthetic_sentiment_frame(periods=520)
     input_csv = tmp_path / "spy_daily.csv"
     vix_csv = tmp_path / "vix_daily.csv"
     sentiment_csv = tmp_path / "sentiment_daily.csv"
@@ -110,17 +110,19 @@ def test_run_feature_ablation_writes_outputs(tmp_path) -> None:
         output_dir=tmp_path / "ablation",
     )
 
-    assert len(results) == 4
+    assert len(results) == 5
     assert list(results["variant"].sort_values()) == [
         "price_only",
         "price_plus_regime",
         "price_plus_regime_plus_sentiment",
         "price_plus_regime_plus_trend_state",
+        "price_plus_regime_plus_trend_state_plus_vol_state",
     ]
     feature_counts = dict(zip(results["variant"], results["feature_count"]))
     assert feature_counts["price_only"] == 13
     assert feature_counts["price_plus_regime"] == 14
     assert feature_counts["price_plus_regime_plus_trend_state"] == 17
+    assert feature_counts["price_plus_regime_plus_trend_state_plus_vol_state"] == 20
     assert feature_counts["price_plus_regime_plus_sentiment"] == 18
     assert paths["csv"].exists()
     assert paths["json"].exists()
@@ -128,4 +130,4 @@ def test_run_feature_ablation_writes_outputs(tmp_path) -> None:
 
     summary = json.loads(paths["summary"].read_text(encoding="utf-8"))
     assert summary["best_by_mean_sharpe"] is not None
-    assert len(summary["variants"]) == 4
+    assert len(summary["variants"]) == 5

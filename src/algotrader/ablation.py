@@ -24,6 +24,7 @@ from algotrader.training.dataset import (
     REGIME_FEATURE_COLUMNS,
     SENTIMENT_FEATURE_COLUMNS,
     TREND_STATE_FEATURE_COLUMNS,
+    VOL_STATE_FEATURE_COLUMNS,
 )
 
 
@@ -36,12 +37,12 @@ class AblationVariant:
 
 
 ABLATION_VARIANTS = (
-    AblationVariant(
-        name="price_only",
-        use_vix=False,
-        use_sentiment=False,
-        feature_columns=tuple(DEFAULT_FEATURE_COLUMNS),
-    ),
+    # AblationVariant(
+    #     name="price_only",
+    #     use_vix=False,
+    #     use_sentiment=False,
+    #     feature_columns=tuple(DEFAULT_FEATURE_COLUMNS),
+    # ),
     AblationVariant(
         name="price_plus_regime",
         use_vix=True,
@@ -55,11 +56,22 @@ ABLATION_VARIANTS = (
         feature_columns=tuple(DEFAULT_FEATURE_COLUMNS + REGIME_FEATURE_COLUMNS + TREND_STATE_FEATURE_COLUMNS),
     ),
     AblationVariant(
-        name="price_plus_regime_plus_sentiment",
+        name="price_plus_regime_plus_trend_state_plus_vol_state",
         use_vix=True,
-        use_sentiment=True,
-        feature_columns=tuple(DEFAULT_FEATURE_COLUMNS + REGIME_FEATURE_COLUMNS + SENTIMENT_FEATURE_COLUMNS),
+        use_sentiment=False,
+        feature_columns=tuple(
+            DEFAULT_FEATURE_COLUMNS
+            + REGIME_FEATURE_COLUMNS
+            + TREND_STATE_FEATURE_COLUMNS
+            + VOL_STATE_FEATURE_COLUMNS
+        ),
     ),
+    # AblationVariant(
+    #     name="price_plus_regime_plus_sentiment",
+    #     use_vix=True,
+    #     use_sentiment=True,
+    #     feature_columns=tuple(DEFAULT_FEATURE_COLUMNS + REGIME_FEATURE_COLUMNS + SENTIMENT_FEATURE_COLUMNS),
+    # ),
 )
 
 

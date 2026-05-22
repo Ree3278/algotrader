@@ -49,6 +49,16 @@ def _atr(frame: pd.DataFrame, period: int = 14) -> pd.Series:
     return tr.rolling(window=period, min_periods=period).mean()
 
 
+def _trailing_percentile(values: np.ndarray) -> float:
+    last_value = values[-1]
+    if np.isnan(last_value):
+        return np.nan
+    valid = values[~np.isnan(values)]
+    if len(valid) == 0:
+        return np.nan
+    return float((valid <= last_value).sum() / len(valid))
+
+
 def build_price_features(frame: pd.DataFrame) -> pd.DataFrame:
     """Return the initial causal price-only feature matrix.
 
@@ -94,9 +104,23 @@ def build_price_features(frame: pd.DataFrame) -> pd.DataFrame:
     features["BB_lower"] = rolling_mean_20 - band_width
     denom = (features["BB_upper"] - features["BB_lower"]).replace(0.0, np.nan)
     features["BB_pct_b"] = (close - features["BB_lower"]) / denom
+    bb_bandwidth_normalized = (features["BB_upper"] - features["BB_lower"]) / rolling_mean_20.replace(0.0, np.nan)
+    features["bb_bandwidth_percentile_252d"] = bb_bandwidth_normalized.rolling(window=252, min_periods=252).apply(
+        _trailing_percentile,
+        raw=True,
+    )
 
     volume_mean_20 = features["volume"].rolling(window=20, min_periods=20).mean()
     volume_std_20 = features["volume"].rolling(window=20, min_periods=20).std().replace(0.0, np.nan)
     features["volume_zscore_20d"] = (features["volume"] - volume_mean_20) / volume_std_20
+    features["atr_percentile_252d"] = features["ATR_14"].rolling(window=252, min_periods=252).apply(
+        _trailing_percentile,
+        raw=True,
+    )
+    volatility_mean_252 = features["volatility_20d"].rolling(window=252, min_periods=252).mean()
+    volatility_std_252 = features["volatility_20d"].rolling(window=252, min_periods=252).std().replace(0.0, np.nan)
+    features["volatility_20d_zscore_252d"] = (
+        (features["volatility_20d"] - volatility_mean_252) / volatility_std_252
+    )
 
     return features

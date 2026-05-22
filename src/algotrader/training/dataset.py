@@ -31,6 +31,12 @@ TREND_STATE_FEATURE_COLUMNS = [
     "sma_50_above_sma_200",
 ]
 
+VOL_STATE_FEATURE_COLUMNS = [
+    "atr_percentile_252d",
+    "bb_bandwidth_percentile_252d",
+    "volatility_20d_zscore_252d",
+]
+
 REGIME_FEATURE_COLUMNS = [
     "vix_zscore_60d",
 ]

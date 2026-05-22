@@ -7,15 +7,15 @@ from algotrader.features import build_price_features
 
 
 def test_build_price_features_adds_expected_columns_and_respects_warmup() -> None:
-    index = pd.date_range("2024-01-01", periods=260, freq="D", tz="UTC")
+    index = pd.date_range("2024-01-01", periods=320, freq="D", tz="UTC")
     frame = pd.DataFrame(
         {
-            "open": np.linspace(100, 359, 260),
-            "high": np.linspace(101, 360, 260),
-            "low": np.linspace(99, 358, 260),
-            "close": np.linspace(100, 359, 260),
-            "volume": np.linspace(1_000_000, 3_590_000, 260),
-            "vix_close": 20 + 5 * np.sin(np.arange(260) / 10),
+            "open": np.linspace(100, 419, 320),
+            "high": np.linspace(101, 420, 320),
+            "low": np.linspace(99, 418, 320),
+            "close": np.linspace(100, 419, 320),
+            "volume": np.linspace(1_000_000, 4_190_000, 320),
+            "vix_close": 20 + 5 * np.sin(np.arange(320) / 10),
         },
         index=index,
     )
@@ -30,6 +30,9 @@ def test_build_price_features_adds_expected_columns_and_respects_warmup() -> Non
         "price_to_sma_200",
         "sma_200_slope_20d",
         "sma_50_above_sma_200",
+        "atr_percentile_252d",
+        "bb_bandwidth_percentile_252d",
+        "volatility_20d_zscore_252d",
         "vix_zscore_60d",
         "ATR_14",
         "RSI_14",
@@ -53,6 +56,12 @@ def test_build_price_features_adds_expected_columns_and_respects_warmup() -> Non
     assert pd.isna(features.iloc[218]["sma_200_slope_20d"])
     assert features.iloc[219]["sma_200_slope_20d"] > 0.0
     assert features.iloc[199]["sma_50_above_sma_200"] == 1.0
+    assert pd.isna(features.iloc[263]["atr_percentile_252d"])
+    assert not pd.isna(features.iloc[264]["atr_percentile_252d"])
+    assert pd.isna(features.iloc[269]["bb_bandwidth_percentile_252d"])
+    assert not pd.isna(features.iloc[270]["bb_bandwidth_percentile_252d"])
+    assert pd.isna(features.iloc[270]["volatility_20d_zscore_252d"])
+    assert not pd.isna(features.iloc[271]["volatility_20d_zscore_252d"])
     assert pd.isna(features.iloc[58]["vix_zscore_60d"])
     assert not pd.isna(features.iloc[59]["vix_zscore_60d"])
     assert not pd.isna(features.iloc[-1]["MACD_line"])
