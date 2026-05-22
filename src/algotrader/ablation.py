@@ -19,6 +19,12 @@ from algotrader.pipeline import (
     run_pipeline,
 )
 from algotrader.reporting import to_json_safe
+from algotrader.training.dataset import (
+    DEFAULT_FEATURE_COLUMNS,
+    REGIME_FEATURE_COLUMNS,
+    SENTIMENT_FEATURE_COLUMNS,
+    TREND_STATE_FEATURE_COLUMNS,
+)
 
 
 @dataclass(frozen=True)
@@ -26,12 +32,34 @@ class AblationVariant:
     name: str
     use_vix: bool
     use_sentiment: bool
+    feature_columns: tuple[str, ...]
 
 
 ABLATION_VARIANTS = (
-    AblationVariant(name="price_only", use_vix=False, use_sentiment=False),
-    AblationVariant(name="price_plus_regime", use_vix=True, use_sentiment=False),
-    AblationVariant(name="price_plus_regime_plus_sentiment", use_vix=True, use_sentiment=True),
+    AblationVariant(
+        name="price_only",
+        use_vix=False,
+        use_sentiment=False,
+        feature_columns=tuple(DEFAULT_FEATURE_COLUMNS),
+    ),
+    AblationVariant(
+        name="price_plus_regime",
+        use_vix=True,
+        use_sentiment=False,
+        feature_columns=tuple(DEFAULT_FEATURE_COLUMNS + REGIME_FEATURE_COLUMNS),
+    ),
+    AblationVariant(
+        name="price_plus_regime_plus_trend_state",
+        use_vix=True,
+        use_sentiment=False,
+        feature_columns=tuple(DEFAULT_FEATURE_COLUMNS + REGIME_FEATURE_COLUMNS + TREND_STATE_FEATURE_COLUMNS),
+    ),
+    AblationVariant(
+        name="price_plus_regime_plus_sentiment",
+        use_vix=True,
+        use_sentiment=True,
+        feature_columns=tuple(DEFAULT_FEATURE_COLUMNS + REGIME_FEATURE_COLUMNS + SENTIMENT_FEATURE_COLUMNS),
+    ),
 )
 
 
@@ -106,6 +134,7 @@ def run_feature_ablation(
             local_base_config,
             vix_input_csv=local_base_config.vix_input_csv if variant.use_vix else None,
             sentiment_features_csv=local_base_config.sentiment_features_csv if variant.use_sentiment else None,
+            feature_columns=list(variant.feature_columns),
             auto_discover_companion_inputs=False,
             model_dir=run_root / "models",
             output_dir=run_root / "reports",

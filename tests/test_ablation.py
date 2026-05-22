@@ -110,15 +110,17 @@ def test_run_feature_ablation_writes_outputs(tmp_path) -> None:
         output_dir=tmp_path / "ablation",
     )
 
-    assert len(results) == 3
+    assert len(results) == 4
     assert list(results["variant"].sort_values()) == [
         "price_only",
         "price_plus_regime",
         "price_plus_regime_plus_sentiment",
+        "price_plus_regime_plus_trend_state",
     ]
     feature_counts = dict(zip(results["variant"], results["feature_count"]))
     assert feature_counts["price_only"] == 13
     assert feature_counts["price_plus_regime"] == 14
+    assert feature_counts["price_plus_regime_plus_trend_state"] == 17
     assert feature_counts["price_plus_regime_plus_sentiment"] == 18
     assert paths["csv"].exists()
     assert paths["json"].exists()
@@ -126,4 +128,4 @@ def test_run_feature_ablation_writes_outputs(tmp_path) -> None:
 
     summary = json.loads(paths["summary"].read_text(encoding="utf-8"))
     assert summary["best_by_mean_sharpe"] is not None
-    assert len(summary["variants"]) == 3
+    assert len(summary["variants"]) == 4

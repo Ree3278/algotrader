@@ -243,6 +243,7 @@ This runs:
 
 - `price_only`
 - `price_plus_regime`
+- `price_plus_regime_plus_trend_state`
 - `price_plus_regime_plus_sentiment`
 
 and writes:
@@ -250,6 +251,12 @@ and writes:
 - `ablation_results.csv`
 - `ablation_results.json`
 - `ablation_summary.json`
+
+The trend-state variant adds richer SMA context on top of the regime baseline:
+
+- `price_to_sma_200`
+- `sma_200_slope_20d`
+- `sma_50_above_sma_200`
 
 ## Combined Run
 

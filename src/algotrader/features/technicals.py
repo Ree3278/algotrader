@@ -65,7 +65,15 @@ def build_price_features(frame: pd.DataFrame) -> pd.DataFrame:
     features["return_5d"] = close.pct_change(5)
     features["volatility_20d"] = features["return_1d"].rolling(window=20, min_periods=20).std()
     sma_200 = close.rolling(window=200, min_periods=200).mean()
+    sma_50 = close.rolling(window=50, min_periods=50).mean()
     features["price_above_sma_200"] = np.where(sma_200.notna(), (close > sma_200).astype(float), np.nan)
+    features["price_to_sma_200"] = ((close / sma_200) - 1).where(sma_200.notna())
+    features["sma_200_slope_20d"] = sma_200.pct_change(20, fill_method=None)
+    features["sma_50_above_sma_200"] = np.where(
+        sma_200.notna(),
+        (sma_50 > sma_200).astype(float),
+        np.nan,
+    )
     if "vix_close" in features.columns:
         vix_mean_60 = features["vix_close"].rolling(window=60, min_periods=60).mean()
         vix_std_60 = features["vix_close"].rolling(window=60, min_periods=60).std().replace(0.0, np.nan)

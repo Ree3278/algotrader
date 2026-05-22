@@ -25,8 +25,17 @@ DEFAULT_FEATURE_COLUMNS = [
     "volume_zscore_20d",
 ]
 
-OPTIONAL_FEATURE_COLUMNS = [
+TREND_STATE_FEATURE_COLUMNS = [
+    "price_to_sma_200",
+    "sma_200_slope_20d",
+    "sma_50_above_sma_200",
+]
+
+REGIME_FEATURE_COLUMNS = [
     "vix_zscore_60d",
+]
+
+SENTIMENT_FEATURE_COLUMNS = [
     "net_sentiment",
     "abs_emotion",
     "is_empty_block",
@@ -80,7 +89,8 @@ def build_training_dataset(
         selected_feature_columns = feature_columns
     else:
         selected_feature_columns = list(DEFAULT_FEATURE_COLUMNS)
-        selected_feature_columns.extend(column for column in OPTIONAL_FEATURE_COLUMNS if column in features.columns)
+        selected_feature_columns.extend(column for column in REGIME_FEATURE_COLUMNS if column in features.columns)
+        selected_feature_columns.extend(column for column in SENTIMENT_FEATURE_COLUMNS if column in features.columns)
 
     dataset = pd.concat(
         [

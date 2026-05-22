@@ -47,6 +47,7 @@ class PipelineConfig:
     input_csv: Path | None = None
     vix_input_csv: Path | None = None
     sentiment_features_csv: Path | None = None
+    feature_columns: list[str] | None = None
     auto_discover_companion_inputs: bool = True
     fetch_yfinance: bool = False
     yfinance_period: str = "max"
@@ -212,6 +213,7 @@ def _build_dataset(
         vix_frame=vix_frame,
         sentiment_frame=sentiment_frame,
         label_config=label_config or _resolved_label_config(config),
+        feature_columns=config.feature_columns,
     )
     if dataset.data.empty:
         raise ValueError("Training dataset is empty after feature warmup and label construction")
@@ -430,6 +432,7 @@ def run_pipeline(config: TestPipelineConfig) -> TestRunResult:
         input_csv=config.input_csv,
         vix_input_csv=config.vix_input_csv,
         sentiment_features_csv=config.sentiment_features_csv,
+        feature_columns=config.feature_columns,
         auto_discover_companion_inputs=config.auto_discover_companion_inputs,
         fetch_yfinance=config.fetch_yfinance,
         yfinance_period=config.yfinance_period,
