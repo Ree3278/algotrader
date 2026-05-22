@@ -29,28 +29,13 @@ class WalkForwardExperimentResult:
     test_predictions: pd.DataFrame
 
 
-def _slice_price_for_signal_window(price_frame: pd.DataFrame, signal_index: pd.Index) -> pd.DataFrame:
-    if signal_index.empty:
-        raise ValueError("signal_index must not be empty")
-
-    full_index = price_frame.index
-    start_pos = full_index.get_loc(signal_index[0])
-    end_pos = full_index.get_loc(signal_index[-1]) + 3
-    end_pos = min(end_pos, len(full_index))
-    sliced = price_frame.iloc[start_pos:end_pos]
-    if len(sliced) < 3:
-        raise ValueError("Not enough price rows to simulate the signal window")
-    return sliced
-
-
 def _select_threshold(
     price_frame: pd.DataFrame,
-    calibration_index: pd.Index,
+    calibration_data: pd.DataFrame,
     calibration_probabilities: pd.Series,
     base_config: BacktestConfig,
     threshold_grid: tuple[float, ...],
 ) -> float:
-    price_slice = _slice_price_for_signal_window(price_frame, calibration_index)
     best_threshold = base_config.probability_threshold
     best_score = None
 
@@ -60,7 +45,7 @@ def _select_threshold(
             commission_bps=base_config.commission_bps,
             slippage_bps=base_config.slippage_bps,
         )
-        results = run_long_flat_backtest(price_slice, calibration_probabilities, config=config)
+        results = run_long_flat_backtest(price_frame, calibration_data, calibration_probabilities, config=config)
         metrics = summarize_backtest(results)
         score = (
             metrics["sharpe"],
@@ -108,7 +93,7 @@ def run_walk_forward_experiment(
             )
             selected_threshold = _select_threshold(
                 price_frame,
-                calibration_data.index,
+                calibration_data,
                 calibration_probabilities,
                 config.backtest_config,
                 config.threshold_grid,
@@ -132,8 +117,7 @@ def run_walk_forward_experiment(
             commission_bps=config.backtest_config.commission_bps,
             slippage_bps=config.backtest_config.slippage_bps,
         )
-        test_price_slice = _slice_price_for_signal_window(price_frame, test_data.index)
-        backtest_results = run_long_flat_backtest(test_price_slice, test_probabilities, config=fold_backtest_config)
+        backtest_results = run_long_flat_backtest(price_frame, test_data, test_probabilities, config=fold_backtest_config)
         metrics = summarize_backtest(backtest_results)
 
         prediction_frame = pd.DataFrame(

@@ -1,11 +1,10 @@
-"""Minimal long/flat backtest engine using next-open execution."""
+"""Event-driven long/flat backtest aligned to triple-barrier labels."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 import numpy as np
-
 import pandas as pd
 
 
@@ -19,72 +18,171 @@ class BacktestConfig:
     def total_cost_bps(self) -> float:
         return self.commission_bps + self.slippage_bps
 
+    @property
+    def cost_per_side(self) -> float:
+        return self.total_cost_bps / 10_000
+
+
+REQUIRED_SIGNAL_COLUMNS = {
+    "entry_index",
+    "exit_index",
+    "hit_reason",
+    "entry_price",
+    "exit_price",
+    "realized_return",
+}
+
+
+def _build_benchmark_returns(window: pd.DataFrame) -> pd.Series:
+    benchmark = pd.Series(0.0, index=window.index, dtype=float)
+    if window.empty:
+        return benchmark
+
+    closes = window["close"]
+    benchmark.iloc[0] = float((closes.iloc[0] / window["open"].iloc[0]) - 1)
+    if len(window) > 1:
+        benchmark.iloc[1:] = closes.iloc[1:].to_numpy() / closes.iloc[:-1].to_numpy() - 1
+    return benchmark
+
+
+def _build_trade_daily_returns(
+    price_frame: pd.DataFrame,
+    *,
+    entry_pos: int,
+    exit_pos: int,
+    entry_price: float,
+    exit_price: float,
+) -> pd.Series:
+    trade_index = price_frame.index[entry_pos : exit_pos + 1]
+    trade_returns = pd.Series(0.0, index=trade_index, dtype=float)
+    closes = price_frame["close"]
+
+    if entry_pos == exit_pos:
+        trade_returns.iloc[0] = float((exit_price / entry_price) - 1)
+        return trade_returns
+
+    trade_returns.iloc[0] = float((closes.iloc[entry_pos] / entry_price) - 1)
+    for price_pos in range(entry_pos + 1, exit_pos):
+        trade_returns.loc[price_frame.index[price_pos]] = float(
+            (closes.iloc[price_pos] / closes.iloc[price_pos - 1]) - 1
+        )
+    trade_returns.iloc[-1] = float((exit_price / closes.iloc[exit_pos - 1]) - 1)
+    return trade_returns
+
 
 def run_long_flat_backtest(
     price_frame: pd.DataFrame,
+    signal_frame: pd.DataFrame,
     long_probabilities: pd.Series,
     config: BacktestConfig | None = None,
 ) -> pd.DataFrame:
-    """Simulate a long/flat strategy on open-to-open returns.
+    """Simulate one-position event-driven trades from label-aligned signal metadata.
 
-    A signal produced at close of bar `t` becomes a position at open of `t+1`.
-    The resulting position is held until the next open.
+    A signal is generated at close of bar `t`, entered at open of `t+1`, and
+    then held until the precomputed label exit. Signals that fire while a trade
+    is already open are ignored because the current system is long/flat, not
+    long/stacked.
     """
 
     config = config or BacktestConfig()
-    if "open" not in price_frame.columns:
-        raise ValueError("price_frame must contain an 'open' column")
+    required_price_columns = {"open", "close"}
+    missing_price_columns = sorted(required_price_columns.difference(price_frame.columns))
+    if missing_price_columns:
+        raise ValueError(f"price_frame is missing required columns: {missing_price_columns}")
+    missing_signal_columns = sorted(REQUIRED_SIGNAL_COLUMNS.difference(signal_frame.columns))
+    if missing_signal_columns:
+        raise ValueError(f"signal_frame is missing required columns: {missing_signal_columns}")
     if not price_frame.index.is_monotonic_increasing:
         raise ValueError("price_frame index must be sorted ascending")
-    if not long_probabilities.index.isin(price_frame.index).all():
-        raise ValueError("All probability timestamps must exist in the price frame index")
+    if not signal_frame.index.is_monotonic_increasing:
+        raise ValueError("signal_frame index must be sorted ascending")
+    if not long_probabilities.index.isin(signal_frame.index).all():
+        raise ValueError("All probability timestamps must exist in the signal frame index")
 
-    opens = price_frame["open"]
-    signals = long_probabilities.reindex(price_frame.index)
-    target_positions = (signals >= config.probability_threshold).astype(float).fillna(0.0)
+    valid_signals = signal_frame.dropna(subset=["entry_index", "exit_index", "entry_price", "exit_price"]).copy()
+    if valid_signals.empty:
+        return pd.DataFrame()
 
-    records: list[dict[str, float | pd.Timestamp]] = []
-    previous_position = 0.0
+    evaluation_start = pd.Timestamp(valid_signals["entry_index"].min())
+    evaluation_end = pd.Timestamp(valid_signals["exit_index"].max())
+    evaluation_window = price_frame.loc[evaluation_start:evaluation_end].copy()
+    if evaluation_window.empty:
+        return pd.DataFrame()
 
-    for bar_pos in range(1, len(price_frame) - 1):
-        signal_index = price_frame.index[bar_pos - 1]
-        entry_index = price_frame.index[bar_pos]
-        exit_index = price_frame.index[bar_pos + 1]
+    results = pd.DataFrame(
+        index=evaluation_window.index,
+        data={
+            "position": 0.0,
+            "turnover": 0.0,
+            "gross_return": 0.0,
+            "transaction_cost": 0.0,
+            "net_return": 0.0,
+            "benchmark_return": _build_benchmark_returns(evaluation_window),
+            "is_trade_entry": False,
+            "is_trade_exit": False,
+            "trade_net_return": np.nan,
+            "trade_id": pd.Series(pd.NA, index=evaluation_window.index, dtype="Int64"),
+            "entry_signal_index": pd.Series(pd.NaT, index=evaluation_window.index, dtype=evaluation_window.index.dtype),
+            "exit_reason": pd.Series(pd.NA, index=evaluation_window.index, dtype="object"),
+        },
+    )
 
-        target_position = float(target_positions.iloc[bar_pos - 1])
-        turnover = abs(target_position - previous_position)
-        open_to_open_return = (opens.iloc[bar_pos + 1] / opens.iloc[bar_pos]) - 1
-        gross_return = target_position * open_to_open_return
-        transaction_cost = turnover * (config.total_cost_bps / 10_000)
-        net_return = gross_return - transaction_cost
+    signal_probabilities = long_probabilities.reindex(valid_signals.index)
+    active_exit_pos = -1
+    trade_id = 0
 
-        records.append(
-            {
-                "signal_index": signal_index,
-                "entry_index": entry_index,
-                "exit_index": exit_index,
-                "long_probability": float(signals.iloc[bar_pos - 1]),
-                "target_position": target_position,
-                "turnover": turnover,
-                "gross_return": gross_return,
-                "transaction_cost": transaction_cost,
-                "net_return": net_return,
-            }
+    for signal_index, signal_row in valid_signals.iterrows():
+        probability = signal_probabilities.get(signal_index)
+        if pd.isna(probability) or float(probability) < config.probability_threshold:
+            continue
+
+        entry_index = pd.Timestamp(signal_row["entry_index"])
+        exit_index = pd.Timestamp(signal_row["exit_index"])
+        if entry_index not in price_frame.index or exit_index not in price_frame.index:
+            continue
+
+        entry_pos = int(price_frame.index.get_loc(entry_index))
+        exit_pos = int(price_frame.index.get_loc(exit_index))
+        if entry_pos <= active_exit_pos:
+            continue
+
+        trade_id += 1
+        trade_returns = _build_trade_daily_returns(
+            price_frame,
+            entry_pos=entry_pos,
+            exit_pos=exit_pos,
+            entry_price=float(signal_row["entry_price"]),
+            exit_price=float(signal_row["exit_price"]),
         )
-        previous_position = target_position
 
-    results = pd.DataFrame(records).set_index("signal_index")
-    if results.empty:
-        return results
+        results.loc[trade_returns.index, "position"] = 1.0
+        results.loc[trade_returns.index, "gross_return"] += trade_returns.to_numpy()
+        results.loc[trade_returns.index, "trade_id"] = trade_id
+        results.loc[trade_returns.index, "entry_signal_index"] = signal_index
 
+        results.at[entry_index, "turnover"] += 1.0
+        results.at[exit_index, "turnover"] += 1.0
+        results.at[entry_index, "transaction_cost"] += config.cost_per_side
+        results.at[exit_index, "transaction_cost"] += config.cost_per_side
+        results.at[entry_index, "is_trade_entry"] = True
+        results.at[exit_index, "is_trade_exit"] = True
+        results.at[exit_index, "exit_reason"] = signal_row["hit_reason"]
+
+        trade_daily_net = trade_returns.copy()
+        trade_daily_net.loc[entry_index] -= config.cost_per_side
+        trade_daily_net.loc[exit_index] -= config.cost_per_side
+        results.at[exit_index, "trade_net_return"] = float((1 + trade_daily_net).prod() - 1)
+
+        active_exit_pos = exit_pos
+
+    results["net_return"] = results["gross_return"] - results["transaction_cost"]
     results["equity_curve"] = (1 + results["net_return"]).cumprod()
-    results["benchmark_return"] = (opens.shift(-1) / opens - 1).reindex(results["entry_index"]).to_numpy()
     results["benchmark_equity_curve"] = (1 + results["benchmark_return"]).cumprod()
     return results
 
 
 def summarize_backtest(results: pd.DataFrame) -> dict[str, float]:
-    """Compute compact diagnostics from a backtest result frame."""
+    """Compute daily and trade-level diagnostics from event-driven backtest output."""
 
     if results.empty:
         return {
@@ -110,20 +208,22 @@ def summarize_backtest(results: pd.DataFrame) -> dict[str, float]:
     running_peak = results["equity_curve"].cummax()
     drawdown = (results["equity_curve"] / running_peak) - 1
     max_drawdown = float(drawdown.min())
-    positive_returns = net_returns[net_returns > 0].sum()
-    negative_returns = net_returns[net_returns < 0].sum()
-    if negative_returns < 0:
-        profit_factor = float(positive_returns / abs(negative_returns))
-    elif positive_returns > 0:
+
+    trade_returns = results.loc[results["is_trade_exit"], "trade_net_return"].dropna()
+    positive_trade_returns = trade_returns[trade_returns > 0].sum()
+    negative_trade_returns = trade_returns[trade_returns < 0].sum()
+    if negative_trade_returns < 0:
+        profit_factor = float(positive_trade_returns / abs(negative_trade_returns))
+    elif positive_trade_returns > 0:
         profit_factor = float("inf")
     else:
         profit_factor = 0.0
 
-    active_periods = results[results["target_position"] > 0]["net_return"]
-    win_rate = float((active_periods > 0).mean()) if not active_periods.empty else 0.0
-    trade_count = float((results["turnover"] > 0).sum())
-    exposure = float(results["target_position"].mean())
+    win_rate = float((trade_returns > 0).mean()) if not trade_returns.empty else 0.0
+    trade_count = float(len(trade_returns))
+    exposure = float(results["position"].mean())
     turnover = float(results["turnover"].sum())
+
     return {
         "total_return": total_return,
         "benchmark_total_return": benchmark_total_return,

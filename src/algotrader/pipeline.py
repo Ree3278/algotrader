@@ -34,7 +34,6 @@ from algotrader.training.experiment import (
     WalkForwardExperimentConfig,
     WalkForwardExperimentResult,
     _select_threshold,
-    _slice_price_for_signal_window,
 )
 from algotrader.training.walk_forward import PurgedWalkForwardConfig, generate_splits
 from algotrader.training.xgboost_model import XGBoostConfig, train_xgboost_classifier
@@ -245,7 +244,7 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
             )
             selected_threshold = _select_threshold(
                 price_frame,
-                calibration_data.index,
+                calibration_data,
                 calibration_probabilities,
                 config.experiment_config.backtest_config,
                 config.experiment_config.threshold_grid,
@@ -342,10 +341,9 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
             commission_bps=config.experiment_config.backtest_config.commission_bps,
             slippage_bps=config.experiment_config.backtest_config.slippage_bps,
         )
-        test_price_slice = _slice_price_for_signal_window(price_frame, test_data.index)
         from algotrader.backtest import run_long_flat_backtest, summarize_backtest
 
-        backtest_results = run_long_flat_backtest(test_price_slice, test_probabilities, config=backtest_config)
+        backtest_results = run_long_flat_backtest(price_frame, test_data, test_probabilities, config=backtest_config)
         metrics = summarize_backtest(backtest_results)
 
         prediction_frames.append(

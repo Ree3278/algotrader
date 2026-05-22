@@ -5,35 +5,73 @@ import pandas as pd
 from algotrader.backtest import BacktestConfig, run_long_flat_backtest, summarize_backtest
 
 
-def test_backtest_uses_previous_close_signal_for_next_open_position() -> None:
-    index = pd.date_range("2024-01-01", periods=5, freq="D", tz="UTC")
-    price_frame = pd.DataFrame({"open": [100.0, 102.0, 101.0, 104.0, 103.0]}, index=index)
-    probabilities = pd.Series([0.9, 0.2, 0.8, 0.1, 0.1], index=index)
+def test_backtest_holds_until_label_exit_and_skips_overlapping_signals() -> None:
+    index = pd.date_range("2024-01-01", periods=6, freq="D", tz="UTC")
+    price_frame = pd.DataFrame(
+        {
+            "open": [100.0, 102.0, 104.0, 106.0, 108.0, 109.0],
+            "close": [101.0, 103.0, 105.0, 107.0, 109.0, 110.0],
+        },
+        index=index,
+    )
+    signal_frame = pd.DataFrame(
+        {
+            "entry_index": [index[1], index[2], index[4]],
+            "exit_index": [index[3], index[3], index[4]],
+            "hit_reason": ["profit_target", "profit_target", "timeout"],
+            "entry_price": [102.0, 104.0, 108.0],
+            "exit_price": [109.0, 110.0, 109.0],
+            "realized_return": [(109.0 / 102.0) - 1, (110.0 / 104.0) - 1, (109.0 / 108.0) - 1],
+        },
+        index=index[:3],
+    )
+    probabilities = pd.Series([0.9, 0.95, 0.8], index=signal_frame.index)
 
     results = run_long_flat_backtest(
         price_frame,
+        signal_frame,
         probabilities,
         config=BacktestConfig(probability_threshold=0.5, commission_bps=0.0, slippage_bps=0.0),
     )
-
-    assert results.iloc[0]["target_position"] == 1.0
-    assert round(results.iloc[0]["gross_return"], 6) == round((101.0 / 102.0) - 1, 6)
-    assert results.iloc[1]["target_position"] == 0.0
-    assert results.iloc[1]["gross_return"] == 0.0
-    assert results.iloc[2]["target_position"] == 1.0
-    assert round(results.iloc[2]["gross_return"], 6) == round((103.0 / 104.0) - 1, 6)
-
-
-def test_backtest_applies_transaction_costs_on_position_changes() -> None:
-    index = pd.date_range("2024-01-01", periods=4, freq="D", tz="UTC")
-    price_frame = pd.DataFrame({"open": [100.0, 100.0, 101.0, 101.0]}, index=index)
-    probabilities = pd.Series([0.9, 0.1, 0.1, 0.1], index=index)
-    config = BacktestConfig(probability_threshold=0.5, commission_bps=1.0, slippage_bps=2.0)
-
-    results = run_long_flat_backtest(price_frame, probabilities, config=config)
     summary = summarize_backtest(results)
 
-    assert results.iloc[0]["transaction_cost"] == 0.0003
-    assert results.iloc[1]["transaction_cost"] == 0.0003
+    assert results.loc[index[1], "position"] == 1.0
+    assert results.loc[index[2], "position"] == 1.0
+    assert results.loc[index[3], "position"] == 1.0
+    assert results.loc[index[4], "position"] == 1.0
     assert summary["trade_count"] == 2.0
+    assert summary["turnover"] == 4.0
+    assert summary["win_rate"] == 1.0
+    assert round(float(results.loc[index[3], "trade_net_return"]), 6) == round((109.0 / 102.0) - 1, 6)
+
+
+def test_backtest_applies_round_trip_costs_to_trade_returns() -> None:
+    index = pd.date_range("2024-01-01", periods=3, freq="D", tz="UTC")
+    price_frame = pd.DataFrame(
+        {
+            "open": [100.0, 100.0, 101.0],
+            "close": [100.0, 100.0, 101.0],
+        },
+        index=index,
+    )
+    signal_frame = pd.DataFrame(
+        {
+            "entry_index": [index[1]],
+            "exit_index": [index[1]],
+            "hit_reason": ["timeout"],
+            "entry_price": [100.0],
+            "exit_price": [100.0],
+            "realized_return": [0.0],
+        },
+        index=index[:1],
+    )
+    config = BacktestConfig(probability_threshold=0.5, commission_bps=1.0, slippage_bps=2.0)
+    probabilities = pd.Series([0.9], index=signal_frame.index)
+
+    results = run_long_flat_backtest(price_frame, signal_frame, probabilities, config=config)
+    summary = summarize_backtest(results)
+
+    assert round(float(results.loc[index[1], "transaction_cost"]), 6) == 0.0006
+    assert round(float(results.loc[index[1], "trade_net_return"]), 6) == -0.0006
+    assert summary["trade_count"] == 1.0
     assert summary["turnover"] == 2.0
