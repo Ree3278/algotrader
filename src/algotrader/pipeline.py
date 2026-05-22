@@ -26,6 +26,7 @@ from algotrader.labels import TripleBarrierConfig
 from algotrader.profiles import build_model_profile, list_profile_names
 from algotrader.reporting import build_experiment_summary, format_test_terminal_summary, write_experiment_reports
 from algotrader.settings import DEFAULT_SETTINGS, ProjectSettings
+from algotrader.thresholds import list_threshold_policy_names
 from algotrader.training.artifacts import (
     load_model_artifact,
     load_training_manifest,
@@ -41,7 +42,9 @@ from algotrader.training.dataset import (
 from algotrader.training.experiment import (
     WalkForwardExperimentConfig,
     WalkForwardExperimentResult,
-    _select_threshold,
+    build_threshold_application,
+    default_threshold_selection,
+    select_thresholds,
 )
 from algotrader.training.walk_forward import generate_splits
 from algotrader.training.xgboost_model import train_xgboost_classifier
@@ -55,6 +58,7 @@ class PipelineConfig:
     sentiment_features_csv: Path | None = None
     feature_columns: list[str] | None = None
     profile_name: str = DEFAULT_SETTINGS.profiles.default_profile_name
+    threshold_policy_name: str = DEFAULT_SETTINGS.thresholds.default_policy_name
     auto_discover_companion_inputs: bool = True
     fetch_yfinance: bool = False
     yfinance_period: str = "max"
@@ -129,7 +133,11 @@ def _default_vix_output_csv() -> Path:
 
 
 def _resolved_experiment_config(config: PipelineConfig) -> WalkForwardExperimentConfig:
-    return config.experiment_config or config.settings.build_experiment_config()
+    base_experiment_config = config.experiment_config or config.settings.build_experiment_config()
+    return replace(
+        base_experiment_config,
+        threshold_policy_name=config.threshold_policy_name,
+    )
 
 
 def _resolved_label_config(config: PipelineConfig):
@@ -269,7 +277,10 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
             experiment_config.min_calibration_size,
         )
         calibration_data = train_data.iloc[0:0]
-        selected_threshold = experiment_config.backtest_config.probability_threshold
+        threshold_selection = default_threshold_selection(
+            threshold_policy_name=experiment_config.threshold_policy_name,
+            default_threshold=experiment_config.backtest_config.probability_threshold,
+        )
 
         if len(train_data) >= experiment_config.min_training_size + calibration_size:
             train_core = train_data.iloc[:-calibration_size]
@@ -284,12 +295,13 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
                 calibration_model.predict_proba(calibration_data[dataset.feature_columns])[:, 1],
                 index=calibration_data.index,
             )
-            selected_threshold = _select_threshold(
+            threshold_selection = select_thresholds(
                 price_frame,
                 calibration_data,
                 calibration_probabilities,
                 experiment_config.backtest_config,
                 experiment_config.threshold_grid,
+                experiment_config.threshold_policy_name,
             )
 
         final_model = train_xgboost_classifier(
@@ -306,7 +318,9 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
                 "fold": split.fold,
                 "model_file": model_filename,
                 "model_backend": model_backend,
-                "selected_threshold": float(selected_threshold),
+                "threshold_policy_name": threshold_selection.policy_name,
+                "selected_threshold": float(threshold_selection.representative_threshold),
+                "selected_threshold_map": json.dumps(threshold_selection.thresholds_by_regime, sort_keys=True),
                 "train_size": int(len(train_data)),
                 "calibration_size": int(len(calibration_data)),
                 "test_size": int(len(test_data)),
@@ -330,6 +344,7 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
         "feature_columns": dataset.feature_columns,
         "profile_name": config.profile_name,
         "profile_blocks": _resolved_profile(config).block_names,
+        "threshold_policy_name": experiment_config.threshold_policy_name,
         "target_column": dataset.target_column,
         "input_csv": str(config.input_csv) if config.input_csv is not None else None,
         "vix_input_csv": str(config.vix_input_csv) if config.vix_input_csv is not None else None,
@@ -363,6 +378,7 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
         config,
         profile_name=manifest.get("profile_name", config.profile_name),
         feature_columns=manifest.get("feature_columns"),
+        threshold_policy_name=manifest.get("threshold_policy_name", config.threshold_policy_name),
     )
     label_config = None
     if manifest.get("label_config") is not None:
@@ -396,6 +412,19 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
             index=test_data.index,
         )
 
+        threshold_policy_name = getattr(
+            fold_row,
+            "threshold_policy_name",
+            manifest.get("threshold_policy_name", experiment_config.threshold_policy_name),
+        )
+        threshold_map = {"all": float(fold_row.selected_threshold)}
+        if hasattr(fold_row, "selected_threshold_map") and isinstance(fold_row.selected_threshold_map, str):
+            threshold_map = {key: float(value) for key, value in json.loads(fold_row.selected_threshold_map).items()}
+        threshold_series, threshold_regimes = build_threshold_application(
+            test_data,
+            threshold_policy_name=threshold_policy_name,
+            thresholds_by_regime=threshold_map,
+        )
         backtest_config = BacktestConfig(
             probability_threshold=float(fold_row.selected_threshold),
             commission_bps=experiment_config.backtest_config.commission_bps,
@@ -403,7 +432,13 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
         )
         from algotrader.backtest import run_long_flat_backtest, summarize_backtest
 
-        backtest_results = run_long_flat_backtest(price_frame, test_data, test_probabilities, config=backtest_config)
+        backtest_results = run_long_flat_backtest(
+            price_frame,
+            test_data,
+            test_probabilities,
+            config=backtest_config,
+            threshold_series=threshold_series,
+        )
         metrics = summarize_backtest(backtest_results)
 
         prediction_frames.append(
@@ -412,7 +447,8 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
                     "fold": fold_row.fold,
                     "probability_long": test_probabilities,
                     "label": test_data[manifest["target_column"]],
-                    "selected_threshold": float(fold_row.selected_threshold),
+                    "selected_threshold": threshold_series,
+                    "threshold_regime": threshold_regimes,
                 }
             )
         )
@@ -424,6 +460,7 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
                 "calibration_size": int(fold_row.calibration_size),
                 "test_size": int(fold_row.test_size),
                 "model_backend": str(fold_row.model_backend),
+                "threshold_policy_name": threshold_policy_name,
                 "selected_threshold": float(fold_row.selected_threshold),
                 **metrics,
             }
@@ -468,6 +505,7 @@ def run_pipeline(config: TestPipelineConfig) -> TestRunResult:
         sentiment_features_csv=config.sentiment_features_csv,
         feature_columns=config.feature_columns,
         profile_name=config.profile_name,
+        threshold_policy_name=config.threshold_policy_name,
         auto_discover_companion_inputs=config.auto_discover_companion_inputs,
         fetch_yfinance=config.fetch_yfinance,
         yfinance_period=config.yfinance_period,
@@ -522,6 +560,11 @@ def _add_shared_data_args(parser: argparse.ArgumentParser) -> None:
 
 def _add_shared_model_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--profile", default=DEFAULT_SETTINGS.profiles.default_profile_name, choices=list_profile_names())
+    parser.add_argument(
+        "--threshold-policy",
+        default=DEFAULT_SETTINGS.thresholds.default_policy_name,
+        choices=list_threshold_policy_names(),
+    )
     parser.add_argument("--backend", default=DEFAULT_SETTINGS.model.backend, choices=["auto", "xgboost", "hist_gradient_boosting"])
     parser.add_argument("--threshold", type=float, default=DEFAULT_SETTINGS.backtest.probability_threshold, help="Default probability threshold")
     parser.add_argument("--commission-bps", type=float, default=DEFAULT_SETTINGS.backtest.commission_bps, help="Commission in basis points")
@@ -537,7 +580,14 @@ def _settings_from_args(args: argparse.Namespace) -> ProjectSettings:
         commission_bps=args.commission_bps,
         slippage_bps=args.slippage_bps,
     )
-    return replace(DEFAULT_SETTINGS, data=data_settings, model=model_settings, backtest=backtest_settings)
+    threshold_settings = replace(DEFAULT_SETTINGS.thresholds, default_policy_name=args.threshold_policy)
+    return replace(
+        DEFAULT_SETTINGS,
+        data=data_settings,
+        model=model_settings,
+        backtest=backtest_settings,
+        thresholds=threshold_settings,
+    )
 
 
 def build_train_arg_parser() -> argparse.ArgumentParser:
@@ -575,6 +625,7 @@ def _train_config_from_args(args: argparse.Namespace) -> TrainPipelineConfig:
         vix_input_csv=args.vix_csv,
         sentiment_features_csv=args.sentiment_features_csv,
         profile_name=args.profile,
+        threshold_policy_name=args.threshold_policy,
         auto_discover_companion_inputs=True,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
@@ -594,6 +645,7 @@ def _test_config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
         vix_input_csv=args.vix_csv,
         sentiment_features_csv=args.sentiment_features_csv,
         profile_name=args.profile,
+        threshold_policy_name=args.threshold_policy,
         auto_discover_companion_inputs=True,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,

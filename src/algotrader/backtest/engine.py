@@ -75,6 +75,7 @@ def run_long_flat_backtest(
     signal_frame: pd.DataFrame,
     long_probabilities: pd.Series,
     config: BacktestConfig | None = None,
+    threshold_series: pd.Series | None = None,
 ) -> pd.DataFrame:
     """Simulate one-position event-driven trades from label-aligned signal metadata.
 
@@ -98,6 +99,8 @@ def run_long_flat_backtest(
         raise ValueError("signal_frame index must be sorted ascending")
     if not long_probabilities.index.isin(signal_frame.index).all():
         raise ValueError("All probability timestamps must exist in the signal frame index")
+    if threshold_series is not None and not threshold_series.index.isin(signal_frame.index).all():
+        raise ValueError("All threshold timestamps must exist in the signal frame index")
 
     valid_signals = signal_frame.dropna(subset=["entry_index", "exit_index", "entry_price", "exit_price"]).copy()
     if valid_signals.empty:
@@ -128,12 +131,18 @@ def run_long_flat_backtest(
     )
 
     signal_probabilities = long_probabilities.reindex(valid_signals.index)
+    signal_thresholds = (
+        threshold_series.reindex(valid_signals.index).astype(float)
+        if threshold_series is not None
+        else pd.Series(config.probability_threshold, index=valid_signals.index, dtype=float)
+    )
     active_exit_pos = -1
     trade_id = 0
 
     for signal_index, signal_row in valid_signals.iterrows():
         probability = signal_probabilities.get(signal_index)
-        if pd.isna(probability) or float(probability) < config.probability_threshold:
+        threshold = signal_thresholds.get(signal_index, config.probability_threshold)
+        if pd.isna(probability) or pd.isna(threshold) or float(probability) < float(threshold):
             continue
 
         entry_index = pd.Timestamp(signal_row["entry_index"])

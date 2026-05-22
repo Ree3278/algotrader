@@ -140,6 +140,7 @@ def test_train_then_test_pipeline_from_local_csv_writes_artifacts(tmp_path) -> N
     saved_summary = json.loads(test_result.report_paths["summary"].read_text(encoding="utf-8"))
     assert saved_summary["symbol"] == "SPY"
     assert saved_summary["model_backend"] == "hist_gradient_boosting"
+    assert train_result.manifest["threshold_policy_name"] == DEFAULT_SETTINGS.thresholds.default_policy_name
     assert train_result.manifest["label_config"]["max_holding_bars"] == DEFAULT_SETTINGS.labels.max_holding_bars
     assert train_result.manifest["label_config"]["profit_target_atr"] == DEFAULT_SETTINGS.labels.profit_target_atr
     assert train_result.manifest["label_config"]["stop_loss_atr"] == DEFAULT_SETTINGS.labels.stop_loss_atr
@@ -229,6 +230,44 @@ def test_compute_debug_metrics_reads_saved_artifacts(tmp_path) -> None:
     assert "label_distribution_pct" in metrics
     assert "hit_reason_pct" in metrics
     assert len(metrics["fold_sharpes"]) == metrics["fold_count"]
+
+
+def test_train_and_test_pipeline_supports_regime_conditional_thresholding(tmp_path) -> None:
+    price_frame = _synthetic_price_frame()
+    vix_frame = _synthetic_vix_frame()
+    input_csv = tmp_path / "spy_daily.csv"
+    vix_csv = tmp_path / "vix_daily.csv"
+    model_dir = tmp_path / "models"
+    output_dir = tmp_path / "reports"
+    save_ohlcv_csv(price_frame, input_csv)
+    save_ohlcv_csv(vix_frame, vix_csv)
+
+    run_training_pipeline(
+        TrainPipelineConfig(
+            symbol="SPY",
+            input_csv=input_csv,
+            vix_input_csv=vix_csv,
+            profile_name="price_plus_regime_plus_trend_state",
+            threshold_policy_name="trend_regime",
+            model_dir=model_dir,
+            experiment_config=_experiment_config(),
+        )
+    )
+    test_result = run_test_pipeline(
+        TestPipelineConfig(
+            symbol="SPY",
+            input_csv=input_csv,
+            vix_input_csv=vix_csv,
+            profile_name="price_plus_regime_plus_trend_state",
+            threshold_policy_name="trend_regime",
+            model_dir=model_dir,
+            output_dir=output_dir,
+            experiment_config=_experiment_config(),
+        )
+    )
+
+    assert "threshold_regime" in test_result.test_predictions.columns
+    assert set(test_result.test_predictions["threshold_regime"].dropna().unique()).issubset({"bull_trend", "other"})
 
 
 def test_train_and_test_pipeline_accepts_sentiment_features_csv(tmp_path) -> None:

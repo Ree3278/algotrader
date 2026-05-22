@@ -75,3 +75,37 @@ def test_backtest_applies_round_trip_costs_to_trade_returns() -> None:
     assert round(float(results.loc[index[1], "trade_net_return"]), 6) == -0.0006
     assert summary["trade_count"] == 1.0
     assert summary["turnover"] == 2.0
+
+
+def test_backtest_supports_per_signal_threshold_series() -> None:
+    index = pd.date_range("2024-01-01", periods=4, freq="D", tz="UTC")
+    price_frame = pd.DataFrame(
+        {
+            "open": [100.0, 100.0, 101.0, 102.0],
+            "close": [100.0, 101.0, 102.0, 103.0],
+        },
+        index=index,
+    )
+    signal_frame = pd.DataFrame(
+        {
+            "entry_index": [index[1], index[2]],
+            "exit_index": [index[1], index[2]],
+            "hit_reason": ["timeout", "timeout"],
+            "entry_price": [100.0, 101.0],
+            "exit_price": [101.0, 102.0],
+            "realized_return": [0.01, 102.0 / 101.0 - 1],
+        },
+        index=index[:2],
+    )
+    probabilities = pd.Series([0.56, 0.56], index=signal_frame.index)
+    thresholds = pd.Series([0.6, 0.5], index=signal_frame.index)
+
+    results = run_long_flat_backtest(
+        price_frame,
+        signal_frame,
+        probabilities,
+        config=BacktestConfig(probability_threshold=0.55, commission_bps=0.0, slippage_bps=0.0),
+        threshold_series=thresholds,
+    )
+
+    assert results["is_trade_exit"].sum() == 1

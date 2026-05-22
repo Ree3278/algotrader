@@ -128,6 +128,11 @@ class ProfileSettings:
 
 
 @dataclass(frozen=True)
+class ThresholdPolicySettings:
+    default_policy_name: str = "global"
+
+
+@dataclass(frozen=True)
 class ProjectSettings:
     data: DataSettings = DataSettings()
     paths: PathSettings = PathSettings()
@@ -137,6 +142,7 @@ class ProjectSettings:
     backtest: BacktestSettings = BacktestSettings()
     experiment: ExperimentSettings = ExperimentSettings()
     profiles: ProfileSettings = ProfileSettings()
+    thresholds: ThresholdPolicySettings = ThresholdPolicySettings()
 
     def build_label_config(self) -> TripleBarrierConfig:
         return self.labels.build()
@@ -150,6 +156,7 @@ class ProjectSettings:
             calibration_fraction=self.experiment.calibration_fraction,
             min_calibration_size=self.experiment.min_calibration_size,
             min_training_size=self.experiment.min_training_size,
+            threshold_policy_name=self.thresholds.default_policy_name,
         )
 
 

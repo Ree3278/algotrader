@@ -27,17 +27,23 @@ from algotrader.reporting import format_ablation_results_table, to_json_safe
 class AblationVariant:
     name: str
     profile_name: str
+    threshold_policy_name: str = DEFAULT_SETTINGS.thresholds.default_policy_name
 
 
 ABLATION_VARIANTS = (
-    AblationVariant(name="price_only", profile_name="price_only"),
-    AblationVariant(name="price_plus_regime", profile_name="price_plus_regime"),
+    # AblationVariant(name="price_only", profile_name="price_only"),
+    # AblationVariant(name="price_plus_regime", profile_name="price_plus_regime"),
     AblationVariant(name="price_plus_regime_plus_trend_state", profile_name="price_plus_regime_plus_trend_state"),
     AblationVariant(
-        name="price_plus_regime_plus_trend_state_plus_vol_state",
-        profile_name="price_plus_regime_plus_trend_state_plus_vol_state",
+        name="price_plus_regime_plus_trend_state_plus_regime_thresholding",
+        profile_name="price_plus_regime_plus_trend_state",
+        threshold_policy_name="trend_regime",
     ),
-    AblationVariant(name="price_plus_regime_plus_sentiment", profile_name="price_plus_regime_plus_sentiment"),
+    # AblationVariant(
+    #     name="price_plus_regime_plus_trend_state_plus_vol_state",
+    #     profile_name="price_plus_regime_plus_trend_state_plus_vol_state",
+    # ),
+    #AblationVariant(name="price_plus_regime_plus_sentiment", profile_name="price_plus_regime_plus_sentiment"),
 )
 
 
@@ -83,7 +89,7 @@ def run_feature_ablation(
     *,
     output_dir: str | Path,
 ) -> tuple[pd.DataFrame, dict[str, Path]]:
-    """Run the three ablation variants under a fixed label configuration."""
+    """Run ablation variants under a fixed label configuration."""
 
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
@@ -103,6 +109,7 @@ def run_feature_ablation(
             vix_input_csv=local_base_config.vix_input_csv if profile.requires_vix else None,
             sentiment_features_csv=local_base_config.sentiment_features_csv if profile.requires_sentiment else None,
             profile_name=profile.name,
+            threshold_policy_name=variant.threshold_policy_name,
             feature_columns=profile.feature_columns,
             auto_discover_companion_inputs=False,
             model_dir=run_root / "models",
@@ -163,6 +170,7 @@ def _config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
         vix_input_csv=args.vix_csv,
         sentiment_features_csv=args.sentiment_features_csv,
         profile_name=args.profile,
+        threshold_policy_name=args.threshold_policy,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
         yfinance_start=args.yf_start,

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass, field
 
 import pandas as pd
 
 from algotrader.backtest import BacktestConfig, run_long_flat_backtest, summarize_backtest
+from algotrader.thresholds import build_threshold_policy
 from algotrader.training.dataset import TrainingDataset
 from algotrader.training.walk_forward import PurgedWalkForwardConfig, generate_splits
 from algotrader.training.xgboost_model import XGBoostConfig, train_xgboost_classifier
@@ -21,6 +23,7 @@ class WalkForwardExperimentConfig:
     calibration_fraction: float = 0.2
     min_calibration_size: int = 20
     min_training_size: int = 30
+    threshold_policy_name: str = "global"
 
 
 @dataclass(frozen=True)
@@ -29,23 +32,68 @@ class WalkForwardExperimentResult:
     test_predictions: pd.DataFrame
 
 
-def _select_threshold(
+@dataclass(frozen=True)
+class ThresholdSelection:
+    policy_name: str
+    thresholds_by_regime: dict[str, float]
+
+    @property
+    def representative_threshold(self) -> float:
+        values = list(self.thresholds_by_regime.values())
+        return float(sum(values) / len(values)) if values else 0.0
+
+
+def default_threshold_selection(
+    *,
+    threshold_policy_name: str,
+    default_threshold: float,
+) -> ThresholdSelection:
+    policy = build_threshold_policy(threshold_policy_name)
+    return ThresholdSelection(
+        policy_name=policy.name,
+        thresholds_by_regime={regime: float(default_threshold) for regime in policy.regime_names},
+    )
+
+
+def build_threshold_application(
+    signal_frame: pd.DataFrame,
+    *,
+    threshold_policy_name: str,
+    thresholds_by_regime: dict[str, float],
+) -> tuple[pd.Series, pd.Series]:
+    policy = build_threshold_policy(threshold_policy_name)
+    return policy.build_threshold_series(signal_frame, thresholds_by_regime)
+
+
+def select_thresholds(
     price_frame: pd.DataFrame,
     calibration_data: pd.DataFrame,
     calibration_probabilities: pd.Series,
     base_config: BacktestConfig,
     threshold_grid: tuple[float, ...],
-) -> float:
-    best_threshold = base_config.probability_threshold
+    threshold_policy_name: str,
+) -> ThresholdSelection:
+    policy = build_threshold_policy(threshold_policy_name)
+    best_thresholds = {regime: base_config.probability_threshold for regime in policy.regime_names}
     best_score = None
 
-    for threshold in threshold_grid:
-        config = BacktestConfig(
-            probability_threshold=threshold,
-            commission_bps=base_config.commission_bps,
-            slippage_bps=base_config.slippage_bps,
+    for threshold_values in itertools.product(threshold_grid, repeat=len(policy.regime_names)):
+        threshold_map = {
+            regime: float(threshold)
+            for regime, threshold in zip(policy.regime_names, threshold_values, strict=True)
+        }
+        threshold_series, _ = policy.build_threshold_series(calibration_data, threshold_map)
+        results = run_long_flat_backtest(
+            price_frame,
+            calibration_data,
+            calibration_probabilities,
+            config=BacktestConfig(
+                probability_threshold=base_config.probability_threshold,
+                commission_bps=base_config.commission_bps,
+                slippage_bps=base_config.slippage_bps,
+            ),
+            threshold_series=threshold_series,
         )
-        results = run_long_flat_backtest(price_frame, calibration_data, calibration_probabilities, config=config)
         metrics = summarize_backtest(results)
         score = (
             metrics["sharpe"],
@@ -54,9 +102,12 @@ def _select_threshold(
         )
         if best_score is None or score > best_score:
             best_score = score
-            best_threshold = threshold
+            best_thresholds = threshold_map
 
-    return best_threshold
+    return ThresholdSelection(
+        policy_name=policy.name,
+        thresholds_by_regime=best_thresholds,
+    )
 
 
 def run_walk_forward_experiment(
@@ -78,6 +129,7 @@ def run_walk_forward_experiment(
             continue
 
         calibration_size = max(int(len(train_data) * config.calibration_fraction), config.min_calibration_size)
+        calibration_data = train_data.iloc[0:0]
         if len(train_data) >= config.min_training_size + calibration_size:
             train_core = train_data.iloc[:-calibration_size]
             calibration_data = train_data.iloc[-calibration_size:]
@@ -91,16 +143,19 @@ def run_walk_forward_experiment(
                 calibration_model.predict_proba(calibration_data[dataset.feature_columns])[:, 1],
                 index=calibration_data.index,
             )
-            selected_threshold = _select_threshold(
+            threshold_selection = select_thresholds(
                 price_frame,
                 calibration_data,
                 calibration_probabilities,
                 config.backtest_config,
                 config.threshold_grid,
+                config.threshold_policy_name,
             )
         else:
-            calibration_data = train_data.iloc[0:0]
-            selected_threshold = config.backtest_config.probability_threshold
+            threshold_selection = default_threshold_selection(
+                threshold_policy_name=config.threshold_policy_name,
+                default_threshold=config.backtest_config.probability_threshold,
+            )
 
         final_model = train_xgboost_classifier(
             train_data[dataset.feature_columns],
@@ -112,12 +167,23 @@ def run_walk_forward_experiment(
             index=test_data.index,
         )
 
+        threshold_series, threshold_regimes = build_threshold_application(
+            test_data,
+            threshold_policy_name=threshold_selection.policy_name,
+            thresholds_by_regime=threshold_selection.thresholds_by_regime,
+        )
         fold_backtest_config = BacktestConfig(
-            probability_threshold=selected_threshold,
+            probability_threshold=threshold_selection.representative_threshold,
             commission_bps=config.backtest_config.commission_bps,
             slippage_bps=config.backtest_config.slippage_bps,
         )
-        backtest_results = run_long_flat_backtest(price_frame, test_data, test_probabilities, config=fold_backtest_config)
+        backtest_results = run_long_flat_backtest(
+            price_frame,
+            test_data,
+            test_probabilities,
+            config=fold_backtest_config,
+            threshold_series=threshold_series,
+        )
         metrics = summarize_backtest(backtest_results)
 
         prediction_frame = pd.DataFrame(
@@ -125,7 +191,8 @@ def run_walk_forward_experiment(
                 "fold": split.fold,
                 "probability_long": test_probabilities,
                 "label": test_data[dataset.target_column],
-                "selected_threshold": selected_threshold,
+                "selected_threshold": threshold_series,
+                "threshold_regime": threshold_regimes,
             }
         )
         prediction_frames.append(prediction_frame)
@@ -137,7 +204,8 @@ def run_walk_forward_experiment(
                 "calibration_size": int(len(calibration_data)),
                 "test_size": int(len(test_data)),
                 "model_backend": getattr(final_model, "_algotrader_backend", "unknown"),
-                "selected_threshold": float(selected_threshold),
+                "threshold_policy_name": threshold_selection.policy_name,
+                "selected_threshold": float(threshold_selection.representative_threshold),
                 **metrics,
             }
         )

@@ -44,6 +44,7 @@ That file is the source of truth for:
 - backtest costs and threshold defaults
 - experiment calibration settings
 - default model profile
+- default threshold policy
 
 Current default label geometry:
 
@@ -55,6 +56,10 @@ Current default label geometry:
 Current default model profile:
 
 - `price_plus_regime_plus_trend_state`
+
+Current default threshold policy:
+
+- `global`
 
 ## Model Profiles
 
@@ -77,6 +82,17 @@ Preset profiles:
 - `price_plus_regime_plus_sentiment`
 
 The CLI uses `--profile` to select one of these presets. If you do not pass `--profile`, the default is `price_plus_regime_plus_trend_state`.
+
+## Threshold Policies
+
+Threshold selection is also composable. Policies live in `src/algotrader/thresholds.py`.
+
+Available policies:
+
+- `global`
+- `trend_regime`
+
+`trend_regime` calibrates one threshold when both `price_above_sma_200` and `sma_50_above_sma_200` are true, and another threshold otherwise.
 
 ## Fetch Data
 
@@ -141,6 +157,13 @@ To train a different preset profile:
 
 ```bash
 uv run --extra research algotrader-train --profile price_plus_regime
+```
+
+To try regime-conditional thresholding on the current baseline:
+
+```bash
+uv run --extra research algotrader-train --threshold-policy trend_regime
+uv run --extra research algotrader-test
 ```
 
 You can still override paths explicitly if needed:
@@ -243,6 +266,11 @@ Compare the preset feature profiles under the same label configuration:
 ```bash
 uv run --extra research algotrader-ablation
 ```
+
+The ablation now also includes a threshold-policy comparison on the `price_plus_regime_plus_trend_state` baseline:
+
+- `price_plus_regime_plus_trend_state`
+- `price_plus_regime_plus_trend_state_plus_regime_thresholding`
 
 This runs:
 
