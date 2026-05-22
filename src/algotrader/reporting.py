@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -11,16 +12,31 @@ from algotrader.training.experiment import WalkForwardExperimentResult
 
 
 def _to_jsonable(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _to_jsonable(inner_value) for key, inner_value in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_jsonable(item) for item in value]
     if isinstance(value, pd.Timestamp):
         return value.isoformat()
-    if pd.isna(value):
-        return None
     if hasattr(value, "item"):
         try:
-            return value.item()
+            value = value.item()
         except Exception:
             return value
+    if isinstance(value, float):
+        if math.isnan(value):
+            return None
+        if math.isinf(value):
+            return "Infinity" if value > 0 else "-Infinity"
+    if pd.isna(value):
+        return None
     return value
+
+
+def to_json_safe(value: Any) -> Any:
+    """Convert nested values into valid, stable JSON primitives."""
+
+    return _to_jsonable(value)
 
 
 def build_experiment_summary(
@@ -70,7 +86,7 @@ def write_experiment_reports(
     result.fold_summaries.to_csv(fold_summary_path, index=False)
     result.test_predictions.to_csv(predictions_path, index=True)
     summary_path.write_text(
-        json.dumps({key: _to_jsonable(value) for key, value in summary.items()}, indent=2, sort_keys=True),
+        json.dumps(to_json_safe(summary), indent=2, sort_keys=True),
         encoding="utf-8",
     )
 

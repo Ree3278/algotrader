@@ -20,6 +20,7 @@ from algotrader.pipeline import (
     _settings_from_args,
     run_pipeline,
 )
+from algotrader.reporting import to_json_safe
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,7 @@ def _materialize_local_inputs(
         input_csv=price_csv,
         vix_input_csv=vix_csv,
         sentiment_features_csv=sentiment_csv,
+        auto_discover_companion_inputs=False,
         fetch_yfinance=False,
         fetch_alpha_vantage=False,
     )
@@ -154,6 +156,7 @@ def run_label_sweep(
         run_config = replace(
             local_base_config,
             settings=run_settings,
+            auto_discover_companion_inputs=False,
             model_dir=run_root / "models",
             output_dir=run_root / "reports",
         )
@@ -195,15 +198,16 @@ def run_label_sweep(
     json_path = destination / "label_sweep_results.json"
     summary_path = destination / "label_sweep_summary.json"
     results.to_csv(csv_path, index=False)
-    json_path.write_text(results.to_json(orient="records", indent=2), encoding="utf-8")
+    records = to_json_safe(results.to_dict(orient="records"))
+    json_path.write_text(json.dumps(records, indent=2), encoding="utf-8")
 
     summary_payload = {
         "run_count": int(len(results)),
         "materialized_inputs": {key: None if value is None else str(value) for key, value in materialized_inputs.items()},
         "best_by_mean_sharpe": None if results.empty else results.iloc[0].to_dict(),
-        "top_configs": [] if results.empty else json.loads(results.head(10).to_json(orient="records")),
+        "top_configs": [] if results.empty else to_json_safe(results.head(10).to_dict(orient="records")),
     }
-    summary_path.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
+    summary_path.write_text(json.dumps(to_json_safe(summary_payload), indent=2), encoding="utf-8")
     return results, {"csv": csv_path, "json": json_path, "summary": summary_path}
 
 

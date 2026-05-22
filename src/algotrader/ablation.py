@@ -18,6 +18,7 @@ from algotrader.pipeline import (
     _settings_from_args,
     run_pipeline,
 )
+from algotrader.reporting import to_json_safe
 
 
 @dataclass(frozen=True)
@@ -133,13 +134,14 @@ def run_feature_ablation(
     json_path = destination / "ablation_results.json"
     summary_path = destination / "ablation_summary.json"
     results.to_csv(csv_path, index=False)
-    json_path.write_text(results.to_json(orient="records", indent=2), encoding="utf-8")
+    records = to_json_safe(results.to_dict(orient="records"))
+    json_path.write_text(json.dumps(records, indent=2), encoding="utf-8")
     summary_payload = {
         "materialized_inputs": {key: None if value is None else str(value) for key, value in materialized_inputs.items()},
         "best_by_mean_sharpe": None if results.empty else results.iloc[0].to_dict(),
-        "variants": json.loads(results.to_json(orient="records")),
+        "variants": records,
     }
-    summary_path.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
+    summary_path.write_text(json.dumps(to_json_safe(summary_payload), indent=2), encoding="utf-8")
     return results, {"csv": csv_path, "json": json_path, "summary": summary_path}
 
 
