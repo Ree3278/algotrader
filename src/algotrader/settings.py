@@ -122,6 +122,7 @@ class ExperimentSettings:
     min_calibration_size: int = 20
     min_training_size: int = 30
     probability_calibration_method: str = "none"
+    max_calibration_exposure: float | None = None
 
 
 @dataclass(frozen=True)
@@ -166,6 +167,7 @@ class ProjectSettings:
             min_training_size=self.experiment.min_training_size,
             threshold_policy_name=self.thresholds.default_policy_name,
             probability_calibration_method=self.experiment.probability_calibration_method,
+            max_calibration_exposure=self.experiment.max_calibration_exposure,
         )
 
 

@@ -65,6 +65,7 @@ class PipelineConfig:
     profile_name: str = DEFAULT_SETTINGS.profiles.default_profile_name
     threshold_policy_name: str = DEFAULT_SETTINGS.thresholds.default_policy_name
     probability_calibration_method: str = DEFAULT_SETTINGS.experiment.probability_calibration_method
+    max_calibration_exposure: float | None = DEFAULT_SETTINGS.experiment.max_calibration_exposure
     auto_discover_companion_inputs: bool = True
     fetch_yfinance: bool = False
     yfinance_period: str = "max"
@@ -144,6 +145,7 @@ def _resolved_experiment_config(config: PipelineConfig) -> WalkForwardExperiment
         base_experiment_config,
         threshold_policy_name=config.threshold_policy_name,
         probability_calibration_method=config.probability_calibration_method,
+        max_calibration_exposure=config.max_calibration_exposure,
     )
 
 
@@ -315,6 +317,7 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
                 experiment_config.backtest_config,
                 experiment_config.threshold_grid,
                 experiment_config.threshold_policy_name,
+                experiment_config.max_calibration_exposure,
             )
             if calibrator.method == "none":
                 final_model = train_xgboost_classifier(
@@ -372,6 +375,7 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
         "profile_blocks": _resolved_profile(config).block_names,
         "threshold_policy_name": experiment_config.threshold_policy_name,
         "probability_calibration_method": experiment_config.probability_calibration_method,
+        "max_calibration_exposure": experiment_config.max_calibration_exposure,
         "target_column": dataset.target_column,
         "input_csv": str(config.input_csv) if config.input_csv is not None else None,
         "vix_input_csv": str(config.vix_input_csv) if config.vix_input_csv is not None else None,
@@ -409,6 +413,10 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
         probability_calibration_method=manifest.get(
             "probability_calibration_method",
             config.probability_calibration_method,
+        ),
+        max_calibration_exposure=manifest.get(
+            "max_calibration_exposure",
+            config.max_calibration_exposure,
         ),
     )
     label_config = None
@@ -545,6 +553,7 @@ def run_pipeline(config: TestPipelineConfig) -> TestRunResult:
         profile_name=config.profile_name,
         threshold_policy_name=config.threshold_policy_name,
         probability_calibration_method=config.probability_calibration_method,
+        max_calibration_exposure=config.max_calibration_exposure,
         auto_discover_companion_inputs=config.auto_discover_companion_inputs,
         fetch_yfinance=config.fetch_yfinance,
         yfinance_period=config.yfinance_period,
@@ -609,6 +618,12 @@ def _add_shared_model_args(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_SETTINGS.experiment.probability_calibration_method,
         choices=["none", "platt"],
     )
+    parser.add_argument(
+        "--max-calibration-exposure",
+        type=float,
+        default=DEFAULT_SETTINGS.experiment.max_calibration_exposure,
+        help="Optional cap on calibration-period exposure during threshold selection",
+    )
     parser.add_argument("--backend", default=DEFAULT_SETTINGS.model.backend, choices=["auto", "xgboost", "hist_gradient_boosting"])
     parser.add_argument("--threshold", type=float, default=DEFAULT_SETTINGS.backtest.probability_threshold, help="Default probability threshold")
     parser.add_argument("--commission-bps", type=float, default=DEFAULT_SETTINGS.backtest.commission_bps, help="Commission in basis points")
@@ -628,6 +643,7 @@ def _settings_from_args(args: argparse.Namespace) -> ProjectSettings:
     experiment_settings = replace(
         DEFAULT_SETTINGS.experiment,
         probability_calibration_method=args.probability_calibration,
+        max_calibration_exposure=args.max_calibration_exposure,
     )
     return replace(
         DEFAULT_SETTINGS,
@@ -676,6 +692,7 @@ def _train_config_from_args(args: argparse.Namespace) -> TrainPipelineConfig:
         profile_name=args.profile,
         threshold_policy_name=args.threshold_policy,
         probability_calibration_method=args.probability_calibration,
+        max_calibration_exposure=args.max_calibration_exposure,
         auto_discover_companion_inputs=True,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
@@ -697,6 +714,7 @@ def _test_config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
         profile_name=args.profile,
         threshold_policy_name=args.threshold_policy,
         probability_calibration_method=args.probability_calibration,
+        max_calibration_exposure=args.max_calibration_exposure,
         auto_discover_companion_inputs=True,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,

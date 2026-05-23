@@ -29,20 +29,27 @@ class AblationVariant:
     profile_name: str
     threshold_policy_name: str = DEFAULT_SETTINGS.thresholds.default_policy_name
     probability_calibration_method: str = DEFAULT_SETTINGS.experiment.probability_calibration_method
+    max_calibration_exposure: float | None = DEFAULT_SETTINGS.experiment.max_calibration_exposure
 
 
 ABLATION_VARIANTS = (
-    AblationVariant(name="price_plus_regime_plus_trend_state", profile_name="price_plus_regime_plus_trend_state"),
+    # AblationVariant(name="price_plus_regime_plus_trend_state", profile_name="price_plus_regime_plus_trend_state"),
     AblationVariant(
         name="price_plus_regime_plus_trend_state_plus_regime_thresholding",
         profile_name="price_plus_regime_plus_trend_state",
         threshold_policy_name="trend_regime",
     ),
+    # AblationVariant(
+    #     name="price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt",
+    #     profile_name="price_plus_regime_plus_trend_state",
+    #     threshold_policy_name="trend_regime",
+    #     probability_calibration_method="platt",
+    # ),
     AblationVariant(
-        name="price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt",
+        name="price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_exposure_cap",
         profile_name="price_plus_regime_plus_trend_state",
         threshold_policy_name="trend_regime",
-        probability_calibration_method="platt",
+        max_calibration_exposure=0.70,
     ),
     # AblationVariant(
     #     name="price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding",
@@ -121,6 +128,7 @@ def run_feature_ablation(
             profile_name=profile.name,
             threshold_policy_name=variant.threshold_policy_name,
             probability_calibration_method=variant.probability_calibration_method,
+            max_calibration_exposure=variant.max_calibration_exposure,
             feature_columns=profile.feature_columns,
             auto_discover_companion_inputs=False,
             model_dir=run_root / "models",

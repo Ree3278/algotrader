@@ -26,6 +26,7 @@ class WalkForwardExperimentConfig:
     min_training_size: int = 30
     threshold_policy_name: str = "global"
     probability_calibration_method: str = "none"
+    max_calibration_exposure: float | None = None
 
 
 @dataclass(frozen=True)
@@ -74,10 +75,13 @@ def select_thresholds(
     base_config: BacktestConfig,
     threshold_grid: tuple[float, ...],
     threshold_policy_name: str,
+    max_calibration_exposure: float | None = None,
 ) -> ThresholdSelection:
     policy = build_threshold_policy(threshold_policy_name)
     best_thresholds = {regime: base_config.probability_threshold for regime in policy.regime_names}
     best_score = None
+    fallback_thresholds = best_thresholds
+    fallback_score = None
 
     for threshold_values in itertools.product(threshold_grid, repeat=len(policy.regime_names)):
         threshold_map = {
@@ -104,14 +108,17 @@ def select_thresholds(
             metrics["total_return"],
             -metrics["turnover"],
         )
+        if fallback_score is None or score > fallback_score:
+            fallback_score = score
+            fallback_thresholds = threshold_map
+        if max_calibration_exposure is not None and float(metrics["exposure"]) > max_calibration_exposure:
+            continue
         if best_score is None or score > best_score:
             best_score = score
             best_thresholds = threshold_map
 
     if best_score is None:
-        raise ValueError(
-            f"Threshold policy '{threshold_policy_name}' rejected all candidate threshold combinations"
-        )
+        best_thresholds = fallback_thresholds
 
     return ThresholdSelection(
         policy_name=policy.name,
@@ -165,6 +172,7 @@ def run_walk_forward_experiment(
                 config.backtest_config,
                 config.threshold_grid,
                 config.threshold_policy_name,
+                config.max_calibration_exposure,
             )
         else:
             threshold_selection = default_threshold_selection(

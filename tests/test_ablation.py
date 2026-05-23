@@ -118,6 +118,7 @@ def test_run_feature_ablation_writes_outputs(tmp_path) -> None:
         "price_plus_regime_plus_trend_state": 17,
         "price_plus_regime_plus_trend_state_plus_regime_thresholding": 17,
         "price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt": 17,
+        "price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_exposure_cap": 17,
         "price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding": 17,
         "price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding": 18,
     }
@@ -140,6 +141,10 @@ def test_run_feature_ablation_writes_outputs(tmp_path) -> None:
         "price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt": (
             "probability_calibration_method",
             "platt",
+        ),
+        "price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_exposure_cap": (
+            "max_calibration_exposure",
+            0.7,
         ),
         "price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding": (
             "profile_name",

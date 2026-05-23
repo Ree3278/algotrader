@@ -66,6 +66,10 @@ Current default probability calibration:
 
 - `none`
 
+Current default calibration exposure cap:
+
+- `none`
+
 The repo defaults now reflect the frozen baseline:
 
 - profile: `price_plus_regime_plus_trend_state`
@@ -130,6 +134,20 @@ Available options:
 - `platt`
 
 `platt` fits a fold-level logistic calibration model on the calibration slice and applies threshold selection to calibrated probabilities.
+
+## Calibration Guardrails
+
+Threshold selection can optionally enforce a maximum calibration-period exposure.
+
+Example:
+
+```bash
+uv run --extra research algotrader-train \
+  --threshold-policy trend_regime \
+  --max-calibration-exposure 0.70
+```
+
+This does not change the model. It only filters threshold candidates during calibration so the selected policy does not keep the strategy too invested on the calibration slice.
 
 ## Fetch Data
 
@@ -341,6 +359,7 @@ The ablation now also includes a threshold-policy comparison on the `price_plus_
 - `price_plus_regime_plus_trend_state`
 - `price_plus_regime_plus_trend_state_plus_regime_thresholding`
 - `price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt`
+- `price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_exposure_cap`
 - `price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding`
 - `price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding`
 
