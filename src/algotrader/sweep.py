@@ -260,6 +260,7 @@ def _config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
         vix_input_csv=args.vix_csv,
         sentiment_features_csv=args.sentiment_features_csv,
         profile_name=args.profile,
+        experiment_name=args.experiment,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
         yfinance_start=args.yf_start,

@@ -117,6 +117,8 @@ Research workflows now compose a full `ExperimentSpec` from Lego-style parts in 
 
 `train`, `test`, `ablation`, and `holdout` all run through the same experiment-spec layer, so future experiments can reuse the same blocks instead of re-implementing pipeline wiring.
 
+Named experiment specs now live in `src/algotrader/experiment_registry.py`. You can select one directly from the CLI with `--experiment`.
+
 ## Threshold Policies
 
 Threshold selection is also composable. Policies live in `src/algotrader/thresholds.py`.
@@ -258,6 +260,13 @@ To train a different preset profile:
 
 ```bash
 uv run --extra research algotrader-train --profile price_plus_regime
+```
+
+To train a named registered experiment directly:
+
+```bash
+uv run --extra research algotrader-train \
+  --experiment price_plus_regime_plus_trend_state_plus_regime_thresholding
 ```
 
 To try regime-conditional thresholding on the current baseline:

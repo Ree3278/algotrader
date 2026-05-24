@@ -352,6 +352,30 @@ def test_train_pipeline_persists_soft_threshold_objective_settings(tmp_path) -> 
     assert train_result.manifest["calibration_exposure_target"] == 0.70
 
 
+def test_pipeline_can_resolve_named_experiment_spec(tmp_path) -> None:
+    price_frame = _synthetic_price_frame()
+    vix_frame = _synthetic_vix_frame()
+    input_csv = tmp_path / "spy_daily.csv"
+    vix_csv = tmp_path / "vix_daily.csv"
+    save_ohlcv_csv(price_frame, input_csv)
+    save_ohlcv_csv(vix_frame, vix_csv)
+
+    result = run_pipeline(
+        TestPipelineConfig(
+            symbol="SPY",
+            input_csv=input_csv,
+            vix_input_csv=vix_csv,
+            experiment_name="price_plus_regime_plus_trend_state_plus_regime_thresholding",
+            model_dir=tmp_path / "models",
+            output_dir=tmp_path / "reports",
+            experiment_config=_experiment_config(),
+        )
+    )
+
+    assert result.manifest["experiment_name"] == "price_plus_regime_plus_trend_state_plus_regime_thresholding"
+    assert result.manifest["threshold_policy_name"] == "trend_regime"
+
+
 def test_train_and_test_pipeline_accepts_sentiment_features_csv(tmp_path) -> None:
     price_frame = _synthetic_price_frame()
     vix_frame = _synthetic_vix_frame()

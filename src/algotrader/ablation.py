@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from algotrader.experiment_registry import build_registered_experiment
 from algotrader.ingestion import save_ohlcv_csv
 from algotrader.pipeline import (
     TestPipelineConfig,
@@ -20,70 +21,27 @@ from algotrader.pipeline import (
 )
 from algotrader.settings import DEFAULT_SETTINGS
 from algotrader.reporting import format_ablation_results_table, to_json_safe
-from algotrader.specs import ExperimentSpec, build_experiment_spec
+from algotrader.specs import ExperimentSpec
 
 
 @dataclass(frozen=True)
 class AblationVariant:
     name: str
-    experiment_spec: ExperimentSpec
+    experiment_name: str
 
-
-def _ablation_spec(
-    name: str,
-    *,
-    profile_name: str,
-    threshold_policy_name: str = DEFAULT_SETTINGS.thresholds.default_policy_name,
-    probability_calibration_method: str = DEFAULT_SETTINGS.experiment.probability_calibration_method,
-    max_calibration_exposure: float | None = DEFAULT_SETTINGS.experiment.max_calibration_exposure,
-    threshold_selection_objective_name: str = DEFAULT_SETTINGS.experiment.threshold_selection_objective_name,
-    calibration_return_weight: float | None = None,
-    calibration_exposure_target: float | None = None,
-    calibration_exposure_penalty: float | None = None,
-    calibration_turnover_penalty: float | None = None,
-    calibration_drawdown_target: float | None = None,
-    calibration_drawdown_penalty: float | None = None,
-) -> ExperimentSpec:
-    return build_experiment_spec(
-        settings=DEFAULT_SETTINGS,
-        name=name,
-        profile_name=profile_name,
-        threshold_policy_name=threshold_policy_name,
-        probability_calibration_method=probability_calibration_method,
-        max_calibration_exposure=max_calibration_exposure,
-        threshold_selection_objective_name=threshold_selection_objective_name,
-        calibration_return_weight=calibration_return_weight,
-        calibration_exposure_target=calibration_exposure_target,
-        calibration_exposure_penalty=calibration_exposure_penalty,
-        calibration_turnover_penalty=calibration_turnover_penalty,
-        calibration_drawdown_target=calibration_drawdown_target,
-        calibration_drawdown_penalty=calibration_drawdown_penalty,
-    )
+    @property
+    def experiment_spec(self) -> ExperimentSpec:
+        return build_registered_experiment(self.experiment_name)
 
 
 ABLATION_VARIANTS = (
     AblationVariant(
         name="price_plus_regime_plus_trend_state_plus_regime_thresholding",
-        experiment_spec=_ablation_spec(
-            name="price_plus_regime_plus_trend_state_plus_regime_thresholding",
-            profile_name="price_plus_regime_plus_trend_state",
-            threshold_policy_name="trend_regime",
-        ),
+        experiment_name="price_plus_regime_plus_trend_state_plus_regime_thresholding",
     ),
     AblationVariant(
         name="price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_soft_objective",
-        experiment_spec=_ablation_spec(
-            name="price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_soft_objective",
-            profile_name="price_plus_regime_plus_trend_state",
-            threshold_policy_name="trend_regime",
-            threshold_selection_objective_name="soft_risk_adjusted",
-            calibration_return_weight=1.0,
-            calibration_exposure_target=0.0,
-            calibration_exposure_penalty=100.0,
-            calibration_turnover_penalty=0.025,
-            calibration_drawdown_target=0.0,
-            calibration_drawdown_penalty=4.0,
-        ),
+        experiment_name="price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_soft_objective",
     ),
 )
 
@@ -221,6 +179,7 @@ def _config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
         vix_input_csv=args.vix_csv,
         sentiment_features_csv=args.sentiment_features_csv,
         profile_name=args.profile,
+        experiment_name=args.experiment,
         threshold_policy_name=args.threshold_policy,
         probability_calibration_method=args.probability_calibration,
         max_calibration_exposure=args.max_calibration_exposure,

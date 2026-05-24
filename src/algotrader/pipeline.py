@@ -13,6 +13,7 @@ from typing import Any
 import pandas as pd
 
 from algotrader.backtest import BacktestConfig
+from algotrader.experiment_registry import build_registered_experiment, list_experiment_names
 from algotrader.ingestion import (
     fetch_daily_adjusted,
     fetch_yfinance_daily,
@@ -60,6 +61,7 @@ class PipelineConfig:
     feature_columns: list[str] | None = None
     feature_block_names: tuple[str, ...] | None = None
     profile_name: str = DEFAULT_SETTINGS.profiles.default_profile_name
+    experiment_name: str | None = None
     experiment_spec: ExperimentSpec | None = None
     threshold_policy_name: str = DEFAULT_SETTINGS.thresholds.default_policy_name
     probability_calibration_method: str = DEFAULT_SETTINGS.experiment.probability_calibration_method
@@ -173,6 +175,8 @@ def _resolved_profile(config: PipelineConfig):
 def _resolved_experiment_spec(config: PipelineConfig) -> ExperimentSpec:
     if config.experiment_spec is not None:
         return config.experiment_spec
+    if config.experiment_name is not None:
+        return build_registered_experiment(config.experiment_name)
     if config.feature_block_names is not None:
         return build_experiment_spec(
             settings=config.settings,
@@ -649,6 +653,7 @@ def run_pipeline(config: TestPipelineConfig) -> TestRunResult:
         feature_columns=config.feature_columns,
         feature_block_names=config.feature_block_names,
         profile_name=config.profile_name,
+        experiment_name=config.experiment_name,
         experiment_spec=config.experiment_spec,
         threshold_policy_name=config.threshold_policy_name,
         probability_calibration_method=config.probability_calibration_method,
@@ -714,6 +719,11 @@ def _add_shared_data_args(parser: argparse.ArgumentParser) -> None:
 
 def _add_shared_model_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--profile", default=DEFAULT_SETTINGS.profiles.default_profile_name, choices=list_profile_names())
+    parser.add_argument(
+        "--experiment",
+        choices=list_experiment_names(),
+        help="Optional named experiment spec from the registry",
+    )
     parser.add_argument(
         "--threshold-policy",
         default=DEFAULT_SETTINGS.thresholds.default_policy_name,
@@ -845,6 +855,7 @@ def _train_config_from_args(args: argparse.Namespace) -> TrainPipelineConfig:
         vix_input_csv=args.vix_csv,
         sentiment_features_csv=args.sentiment_features_csv,
         profile_name=args.profile,
+        experiment_name=args.experiment,
         threshold_policy_name=args.threshold_policy,
         probability_calibration_method=args.probability_calibration,
         max_calibration_exposure=args.max_calibration_exposure,
@@ -874,6 +885,7 @@ def _test_config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
         vix_input_csv=args.vix_csv,
         sentiment_features_csv=args.sentiment_features_csv,
         profile_name=args.profile,
+        experiment_name=args.experiment,
         threshold_policy_name=args.threshold_policy,
         probability_calibration_method=args.probability_calibration,
         max_calibration_exposure=args.max_calibration_exposure,
