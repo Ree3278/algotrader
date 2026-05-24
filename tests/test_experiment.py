@@ -5,7 +5,11 @@ import pandas as pd
 
 from algotrader.backtest import BacktestConfig
 from algotrader.training.dataset import build_training_dataset
-from algotrader.training.experiment import WalkForwardExperimentConfig, run_walk_forward_experiment
+from algotrader.training.experiment import (
+    WalkForwardExperimentConfig,
+    run_walk_forward_experiment,
+    select_thresholds,
+)
 from algotrader.training.walk_forward import PurgedWalkForwardConfig
 from algotrader.training.xgboost_model import XGBoostConfig
 
@@ -108,3 +112,30 @@ def test_run_walk_forward_experiment_supports_platt_calibration() -> None:
     result = run_walk_forward_experiment(dataset, price_frame, config=config)
 
     assert not result.fold_summaries.empty
+
+
+def test_select_thresholds_falls_back_to_min_exposure_when_cap_is_infeasible() -> None:
+    price_frame = _synthetic_price_frame(periods=120)
+    dataset = build_training_dataset(price_frame)
+    calibration_data = dataset.data.iloc[:30]
+    calibration_probabilities = pd.Series(0.99, index=calibration_data.index)
+
+    selection = select_thresholds(
+        price_frame,
+        calibration_data,
+        calibration_probabilities,
+        BacktestConfig(
+            probability_threshold=0.55,
+            commission_bps=0.0,
+            slippage_bps=0.0,
+        ),
+        threshold_grid=(0.45, 0.55, 0.65),
+        threshold_policy_name="global",
+        max_calibration_exposure=-0.1,
+    )
+
+    assert selection.policy_name == "global"
+    assert selection.selection_mode == "fallback_min_exposure"
+    assert selection.feasible_candidate_count == 0
+    assert selection.calibration_exposure is not None
+    assert selection.calibration_exposure >= 0.0

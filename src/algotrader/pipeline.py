@@ -350,6 +350,9 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
                 "probability_calibration_method": calibrator.method,
                 "selected_threshold": float(threshold_selection.representative_threshold),
                 "selected_threshold_map": json.dumps(threshold_selection.thresholds_by_regime, sort_keys=True),
+                "threshold_selection_mode": threshold_selection.selection_mode,
+                "calibration_exposure": threshold_selection.calibration_exposure,
+                "feasible_threshold_count": int(threshold_selection.feasible_candidate_count),
                 "train_size": int(len(train_data)),
                 "calibration_size": int(len(calibration_data)),
                 "test_size": int(len(test_data)),
@@ -508,6 +511,9 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
                 "threshold_policy_name": threshold_policy_name,
                 "probability_calibration_method": calibrator.method,
                 "selected_threshold": float(fold_row.selected_threshold),
+                "threshold_selection_mode": getattr(fold_row, "threshold_selection_mode", "unknown"),
+                "calibration_exposure": getattr(fold_row, "calibration_exposure", None),
+                "feasible_threshold_count": getattr(fold_row, "feasible_threshold_count", None),
                 **metrics,
             }
         )

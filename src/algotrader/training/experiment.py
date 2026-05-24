@@ -39,6 +39,9 @@ class WalkForwardExperimentResult:
 class ThresholdSelection:
     policy_name: str
     thresholds_by_regime: dict[str, float]
+    selection_mode: str = "feasible_best"
+    calibration_exposure: float | None = None
+    feasible_candidate_count: int = 0
 
     @property
     def representative_threshold(self) -> float:
@@ -55,6 +58,9 @@ def default_threshold_selection(
     return ThresholdSelection(
         policy_name=policy.name,
         thresholds_by_regime={regime: float(default_threshold) for regime in policy.regime_names},
+        selection_mode="default_threshold",
+        calibration_exposure=None,
+        feasible_candidate_count=0,
     )
 
 
@@ -80,8 +86,11 @@ def select_thresholds(
     policy = build_threshold_policy(threshold_policy_name)
     best_thresholds = {regime: base_config.probability_threshold for regime in policy.regime_names}
     best_score = None
-    fallback_thresholds = best_thresholds
-    fallback_score = None
+    best_exposure = None
+    feasible_candidate_count = 0
+    min_exposure_thresholds = best_thresholds
+    min_exposure = None
+    min_exposure_score = None
 
     for threshold_values in itertools.product(threshold_grid, repeat=len(policy.regime_names)):
         threshold_map = {
@@ -108,21 +117,35 @@ def select_thresholds(
             metrics["total_return"],
             -metrics["turnover"],
         )
-        if fallback_score is None or score > fallback_score:
-            fallback_score = score
-            fallback_thresholds = threshold_map
-        if max_calibration_exposure is not None and float(metrics["exposure"]) > max_calibration_exposure:
+        exposure = float(metrics["exposure"])
+        exposure_score = (-exposure, *score)
+        if min_exposure is None or exposure_score > min_exposure_score:
+            min_exposure = exposure
+            min_exposure_score = exposure_score
+            min_exposure_thresholds = threshold_map
+        if max_calibration_exposure is not None and exposure > max_calibration_exposure:
             continue
+        feasible_candidate_count += 1
         if best_score is None or score > best_score:
             best_score = score
             best_thresholds = threshold_map
+            best_exposure = exposure
 
     if best_score is None:
-        best_thresholds = fallback_thresholds
+        return ThresholdSelection(
+            policy_name=policy.name,
+            thresholds_by_regime=min_exposure_thresholds,
+            selection_mode="fallback_min_exposure",
+            calibration_exposure=min_exposure,
+            feasible_candidate_count=feasible_candidate_count,
+        )
 
     return ThresholdSelection(
         policy_name=policy.name,
         thresholds_by_regime=best_thresholds,
+        selection_mode="feasible_best",
+        calibration_exposure=best_exposure,
+        feasible_candidate_count=feasible_candidate_count,
     )
 
 
@@ -229,6 +252,9 @@ def run_walk_forward_experiment(
                 "model_backend": getattr(final_model, "_algotrader_backend", "unknown"),
                 "threshold_policy_name": threshold_selection.policy_name,
                 "selected_threshold": float(threshold_selection.representative_threshold),
+                "threshold_selection_mode": threshold_selection.selection_mode,
+                "calibration_exposure": threshold_selection.calibration_exposure,
+                "feasible_threshold_count": int(threshold_selection.feasible_candidate_count),
                 **metrics,
             }
         )
