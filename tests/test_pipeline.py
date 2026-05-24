@@ -142,6 +142,10 @@ def test_train_then_test_pipeline_from_local_csv_writes_artifacts(tmp_path) -> N
     assert saved_summary["model_backend"] == "hist_gradient_boosting"
     assert train_result.manifest["threshold_policy_name"] == DEFAULT_SETTINGS.thresholds.default_policy_name
     assert train_result.manifest["probability_calibration_method"] == DEFAULT_SETTINGS.experiment.probability_calibration_method
+    assert (
+        train_result.manifest["threshold_selection_objective_name"]
+        == DEFAULT_SETTINGS.experiment.threshold_selection_objective_name
+    )
     assert train_result.manifest["label_config"]["max_holding_bars"] == DEFAULT_SETTINGS.labels.max_holding_bars
     assert train_result.manifest["label_config"]["profit_target_atr"] == DEFAULT_SETTINGS.labels.profit_target_atr
     assert train_result.manifest["label_config"]["stop_loss_atr"] == DEFAULT_SETTINGS.labels.stop_loss_atr
@@ -312,6 +316,39 @@ def test_train_and_test_pipeline_supports_platt_probability_calibration(tmp_path
     observed_methods = set(test_result.test_predictions["probability_calibration_method"].unique())
     assert observed_methods.issubset({"platt", "none"})
     assert "platt" in observed_methods
+
+
+def test_train_pipeline_persists_soft_threshold_objective_settings(tmp_path) -> None:
+    price_frame = _synthetic_price_frame()
+    vix_frame = _synthetic_vix_frame()
+    input_csv = tmp_path / "spy_daily.csv"
+    vix_csv = tmp_path / "vix_daily.csv"
+    model_dir = tmp_path / "models"
+    save_ohlcv_csv(price_frame, input_csv)
+    save_ohlcv_csv(vix_frame, vix_csv)
+
+    train_result = run_training_pipeline(
+        TrainPipelineConfig(
+            symbol="SPY",
+            input_csv=input_csv,
+            vix_input_csv=vix_csv,
+            profile_name="price_plus_regime_plus_trend_state",
+            threshold_policy_name="trend_regime",
+            threshold_selection_objective_name="soft_risk_adjusted",
+            calibration_return_weight=5.0,
+            calibration_exposure_target=0.70,
+            calibration_exposure_penalty=1.0,
+            calibration_turnover_penalty=0.0025,
+            calibration_drawdown_target=0.12,
+            calibration_drawdown_penalty=2.0,
+            model_dir=model_dir,
+            experiment_config=_experiment_config(),
+        )
+    )
+
+    assert train_result.manifest["threshold_selection_objective_name"] == "soft_risk_adjusted"
+    assert train_result.manifest["calibration_return_weight"] == 5.0
+    assert train_result.manifest["calibration_exposure_target"] == 0.70
 
 
 def test_train_and_test_pipeline_accepts_sentiment_features_csv(tmp_path) -> None:

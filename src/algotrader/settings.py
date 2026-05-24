@@ -123,6 +123,13 @@ class ExperimentSettings:
     min_training_size: int = 30
     probability_calibration_method: str = "none"
     max_calibration_exposure: float | None = None
+    threshold_selection_objective_name: str = "legacy"
+    calibration_return_weight: float = 0.0
+    calibration_exposure_target: float | None = None
+    calibration_exposure_penalty: float = 0.0
+    calibration_turnover_penalty: float = 0.0
+    calibration_drawdown_target: float | None = None
+    calibration_drawdown_penalty: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -168,6 +175,13 @@ class ProjectSettings:
             threshold_policy_name=self.thresholds.default_policy_name,
             probability_calibration_method=self.experiment.probability_calibration_method,
             max_calibration_exposure=self.experiment.max_calibration_exposure,
+            threshold_selection_objective_name=self.experiment.threshold_selection_objective_name,
+            calibration_return_weight=self.experiment.calibration_return_weight,
+            calibration_exposure_target=self.experiment.calibration_exposure_target,
+            calibration_exposure_penalty=self.experiment.calibration_exposure_penalty,
+            calibration_turnover_penalty=self.experiment.calibration_turnover_penalty,
+            calibration_drawdown_target=self.experiment.calibration_drawdown_target,
+            calibration_drawdown_penalty=self.experiment.calibration_drawdown_penalty,
         )
 
 

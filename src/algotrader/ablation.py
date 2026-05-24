@@ -30,6 +30,13 @@ class AblationVariant:
     threshold_policy_name: str = DEFAULT_SETTINGS.thresholds.default_policy_name
     probability_calibration_method: str = DEFAULT_SETTINGS.experiment.probability_calibration_method
     max_calibration_exposure: float | None = DEFAULT_SETTINGS.experiment.max_calibration_exposure
+    threshold_selection_objective_name: str = DEFAULT_SETTINGS.experiment.threshold_selection_objective_name
+    calibration_return_weight: float = DEFAULT_SETTINGS.experiment.calibration_return_weight
+    calibration_exposure_target: float | None = DEFAULT_SETTINGS.experiment.calibration_exposure_target
+    calibration_exposure_penalty: float = DEFAULT_SETTINGS.experiment.calibration_exposure_penalty
+    calibration_turnover_penalty: float = DEFAULT_SETTINGS.experiment.calibration_turnover_penalty
+    calibration_drawdown_target: float | None = DEFAULT_SETTINGS.experiment.calibration_drawdown_target
+    calibration_drawdown_penalty: float = DEFAULT_SETTINGS.experiment.calibration_drawdown_penalty
 
 
 ABLATION_VARIANTS = (
@@ -45,11 +52,23 @@ ABLATION_VARIANTS = (
     #     threshold_policy_name="trend_regime",
     #     probability_calibration_method="platt",
     # ),
+    # AblationVariant(
+    #     name="price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_exposure_cap",
+    #     profile_name="price_plus_regime_plus_trend_state",
+    #     threshold_policy_name="trend_regime",
+    #     max_calibration_exposure=0.70,
+    # ),
     AblationVariant(
-        name="price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_exposure_cap",
+        name="price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_soft_objective",
         profile_name="price_plus_regime_plus_trend_state",
         threshold_policy_name="trend_regime",
-        max_calibration_exposure=0.70,
+        threshold_selection_objective_name="soft_risk_adjusted",
+        calibration_return_weight=1.0,
+        calibration_exposure_target=0.0,
+        calibration_exposure_penalty=100.0,
+        calibration_turnover_penalty=0.025,
+        calibration_drawdown_target=0.0,
+        calibration_drawdown_penalty= 4.0,
     ),
     # AblationVariant(
     #     name="price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding",
@@ -129,6 +148,13 @@ def run_feature_ablation(
             threshold_policy_name=variant.threshold_policy_name,
             probability_calibration_method=variant.probability_calibration_method,
             max_calibration_exposure=variant.max_calibration_exposure,
+            threshold_selection_objective_name=variant.threshold_selection_objective_name,
+            calibration_return_weight=variant.calibration_return_weight,
+            calibration_exposure_target=variant.calibration_exposure_target,
+            calibration_exposure_penalty=variant.calibration_exposure_penalty,
+            calibration_turnover_penalty=variant.calibration_turnover_penalty,
+            calibration_drawdown_target=variant.calibration_drawdown_target,
+            calibration_drawdown_penalty=variant.calibration_drawdown_penalty,
             feature_columns=profile.feature_columns,
             auto_discover_companion_inputs=False,
             model_dir=run_root / "models",
@@ -191,6 +217,14 @@ def _config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
         profile_name=args.profile,
         threshold_policy_name=args.threshold_policy,
         probability_calibration_method=args.probability_calibration,
+        max_calibration_exposure=args.max_calibration_exposure,
+        threshold_selection_objective_name=args.threshold_selection_objective,
+        calibration_return_weight=args.calibration_return_weight,
+        calibration_exposure_target=args.calibration_exposure_target,
+        calibration_exposure_penalty=args.calibration_exposure_penalty,
+        calibration_turnover_penalty=args.calibration_turnover_penalty,
+        calibration_drawdown_target=args.calibration_drawdown_target,
+        calibration_drawdown_penalty=args.calibration_drawdown_penalty,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
         yfinance_start=args.yf_start,

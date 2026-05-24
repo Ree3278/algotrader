@@ -70,6 +70,10 @@ Current default calibration exposure cap:
 
 - `none`
 
+Current default threshold-selection objective:
+
+- `legacy`
+
 The repo defaults now reflect the frozen baseline:
 
 - profile: `price_plus_regime_plus_trend_state`
@@ -148,6 +152,35 @@ uv run --extra research algotrader-train \
 ```
 
 This does not change the model. It only filters threshold candidates during calibration so the selected policy does not keep the strategy too invested on the calibration slice.
+
+## Threshold-Selection Objectives
+
+Threshold calibration can also use a soft risk-adjusted objective instead of the legacy Sharpe-first ranking.
+
+Available options:
+
+- `legacy`
+- `soft_risk_adjusted`
+
+`soft_risk_adjusted` still rewards Sharpe and return, but it can also penalize:
+
+- exposure above a target
+- turnover
+- drawdown above a target
+
+Example:
+
+```bash
+uv run --extra research algotrader-train \
+  --threshold-policy trend_regime \
+  --threshold-selection-objective soft_risk_adjusted \
+  --calibration-return-weight 5.0 \
+  --calibration-exposure-target 0.70 \
+  --calibration-exposure-penalty 1.0 \
+  --calibration-turnover-penalty 0.0025 \
+  --calibration-drawdown-target 0.12 \
+  --calibration-drawdown-penalty 2.0
+```
 
 ## Fetch Data
 

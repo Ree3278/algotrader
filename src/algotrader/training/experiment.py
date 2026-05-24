@@ -27,6 +27,13 @@ class WalkForwardExperimentConfig:
     threshold_policy_name: str = "global"
     probability_calibration_method: str = "none"
     max_calibration_exposure: float | None = None
+    threshold_selection_objective_name: str = "legacy"
+    calibration_return_weight: float = 0.0
+    calibration_exposure_target: float | None = None
+    calibration_exposure_penalty: float = 0.0
+    calibration_turnover_penalty: float = 0.0
+    calibration_drawdown_target: float | None = None
+    calibration_drawdown_penalty: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -82,6 +89,13 @@ def select_thresholds(
     threshold_grid: tuple[float, ...],
     threshold_policy_name: str,
     max_calibration_exposure: float | None = None,
+    threshold_selection_objective_name: str = "legacy",
+    calibration_return_weight: float = 0.0,
+    calibration_exposure_target: float | None = None,
+    calibration_exposure_penalty: float = 0.0,
+    calibration_turnover_penalty: float = 0.0,
+    calibration_drawdown_target: float | None = None,
+    calibration_drawdown_penalty: float = 0.0,
 ) -> ThresholdSelection:
     policy = build_threshold_policy(threshold_policy_name)
     best_thresholds = {regime: base_config.probability_threshold for regime in policy.regime_names}
@@ -91,6 +105,33 @@ def select_thresholds(
     min_exposure_thresholds = best_thresholds
     min_exposure = None
     min_exposure_score = None
+
+    def score_threshold_candidate(metrics: dict[str, float]) -> tuple[float, ...]:
+        sharpe = float(metrics["sharpe"])
+        total_return = float(metrics["total_return"])
+        turnover = float(metrics["turnover"])
+        exposure = float(metrics["exposure"])
+        max_drawdown = abs(float(metrics["max_drawdown"]))
+        if threshold_selection_objective_name == "soft_risk_adjusted":
+            exposure_excess = (
+                max(0.0, exposure - calibration_exposure_target)
+                if calibration_exposure_target is not None
+                else exposure
+            )
+            drawdown_excess = (
+                max(0.0, max_drawdown - abs(calibration_drawdown_target))
+                if calibration_drawdown_target is not None
+                else max_drawdown
+            )
+            soft_score = (
+                sharpe
+                + (calibration_return_weight * total_return)
+                - (calibration_exposure_penalty * exposure_excess)
+                - (calibration_turnover_penalty * turnover)
+                - (calibration_drawdown_penalty * drawdown_excess)
+            )
+            return (soft_score, sharpe, total_return, -turnover)
+        return (sharpe, total_return, -turnover)
 
     for threshold_values in itertools.product(threshold_grid, repeat=len(policy.regime_names)):
         threshold_map = {
@@ -112,11 +153,7 @@ def select_thresholds(
             threshold_series=threshold_series,
         )
         metrics = summarize_backtest(results)
-        score = (
-            metrics["sharpe"],
-            metrics["total_return"],
-            -metrics["turnover"],
-        )
+        score = score_threshold_candidate(metrics)
         exposure = float(metrics["exposure"])
         exposure_score = (-exposure, *score)
         if min_exposure is None or exposure_score > min_exposure_score:
@@ -196,6 +233,13 @@ def run_walk_forward_experiment(
                 config.threshold_grid,
                 config.threshold_policy_name,
                 config.max_calibration_exposure,
+                config.threshold_selection_objective_name,
+                config.calibration_return_weight,
+                config.calibration_exposure_target,
+                config.calibration_exposure_penalty,
+                config.calibration_turnover_penalty,
+                config.calibration_drawdown_target,
+                config.calibration_drawdown_penalty,
             )
         else:
             threshold_selection = default_threshold_selection(

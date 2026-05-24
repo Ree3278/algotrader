@@ -66,6 +66,13 @@ class PipelineConfig:
     threshold_policy_name: str = DEFAULT_SETTINGS.thresholds.default_policy_name
     probability_calibration_method: str = DEFAULT_SETTINGS.experiment.probability_calibration_method
     max_calibration_exposure: float | None = DEFAULT_SETTINGS.experiment.max_calibration_exposure
+    threshold_selection_objective_name: str = DEFAULT_SETTINGS.experiment.threshold_selection_objective_name
+    calibration_return_weight: float = DEFAULT_SETTINGS.experiment.calibration_return_weight
+    calibration_exposure_target: float | None = DEFAULT_SETTINGS.experiment.calibration_exposure_target
+    calibration_exposure_penalty: float = DEFAULT_SETTINGS.experiment.calibration_exposure_penalty
+    calibration_turnover_penalty: float = DEFAULT_SETTINGS.experiment.calibration_turnover_penalty
+    calibration_drawdown_target: float | None = DEFAULT_SETTINGS.experiment.calibration_drawdown_target
+    calibration_drawdown_penalty: float = DEFAULT_SETTINGS.experiment.calibration_drawdown_penalty
     auto_discover_companion_inputs: bool = True
     fetch_yfinance: bool = False
     yfinance_period: str = "max"
@@ -146,6 +153,13 @@ def _resolved_experiment_config(config: PipelineConfig) -> WalkForwardExperiment
         threshold_policy_name=config.threshold_policy_name,
         probability_calibration_method=config.probability_calibration_method,
         max_calibration_exposure=config.max_calibration_exposure,
+        threshold_selection_objective_name=config.threshold_selection_objective_name,
+        calibration_return_weight=config.calibration_return_weight,
+        calibration_exposure_target=config.calibration_exposure_target,
+        calibration_exposure_penalty=config.calibration_exposure_penalty,
+        calibration_turnover_penalty=config.calibration_turnover_penalty,
+        calibration_drawdown_target=config.calibration_drawdown_target,
+        calibration_drawdown_penalty=config.calibration_drawdown_penalty,
     )
 
 
@@ -379,6 +393,13 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
         "threshold_policy_name": experiment_config.threshold_policy_name,
         "probability_calibration_method": experiment_config.probability_calibration_method,
         "max_calibration_exposure": experiment_config.max_calibration_exposure,
+        "threshold_selection_objective_name": experiment_config.threshold_selection_objective_name,
+        "calibration_return_weight": experiment_config.calibration_return_weight,
+        "calibration_exposure_target": experiment_config.calibration_exposure_target,
+        "calibration_exposure_penalty": experiment_config.calibration_exposure_penalty,
+        "calibration_turnover_penalty": experiment_config.calibration_turnover_penalty,
+        "calibration_drawdown_target": experiment_config.calibration_drawdown_target,
+        "calibration_drawdown_penalty": experiment_config.calibration_drawdown_penalty,
         "target_column": dataset.target_column,
         "input_csv": str(config.input_csv) if config.input_csv is not None else None,
         "vix_input_csv": str(config.vix_input_csv) if config.vix_input_csv is not None else None,
@@ -420,6 +441,34 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
         max_calibration_exposure=manifest.get(
             "max_calibration_exposure",
             config.max_calibration_exposure,
+        ),
+        threshold_selection_objective_name=manifest.get(
+            "threshold_selection_objective_name",
+            config.threshold_selection_objective_name,
+        ),
+        calibration_return_weight=manifest.get(
+            "calibration_return_weight",
+            config.calibration_return_weight,
+        ),
+        calibration_exposure_target=manifest.get(
+            "calibration_exposure_target",
+            config.calibration_exposure_target,
+        ),
+        calibration_exposure_penalty=manifest.get(
+            "calibration_exposure_penalty",
+            config.calibration_exposure_penalty,
+        ),
+        calibration_turnover_penalty=manifest.get(
+            "calibration_turnover_penalty",
+            config.calibration_turnover_penalty,
+        ),
+        calibration_drawdown_target=manifest.get(
+            "calibration_drawdown_target",
+            config.calibration_drawdown_target,
+        ),
+        calibration_drawdown_penalty=manifest.get(
+            "calibration_drawdown_penalty",
+            config.calibration_drawdown_penalty,
         ),
     )
     label_config = None
@@ -560,6 +609,13 @@ def run_pipeline(config: TestPipelineConfig) -> TestRunResult:
         threshold_policy_name=config.threshold_policy_name,
         probability_calibration_method=config.probability_calibration_method,
         max_calibration_exposure=config.max_calibration_exposure,
+        threshold_selection_objective_name=config.threshold_selection_objective_name,
+        calibration_return_weight=config.calibration_return_weight,
+        calibration_exposure_target=config.calibration_exposure_target,
+        calibration_exposure_penalty=config.calibration_exposure_penalty,
+        calibration_turnover_penalty=config.calibration_turnover_penalty,
+        calibration_drawdown_target=config.calibration_drawdown_target,
+        calibration_drawdown_penalty=config.calibration_drawdown_penalty,
         auto_discover_companion_inputs=config.auto_discover_companion_inputs,
         fetch_yfinance=config.fetch_yfinance,
         yfinance_period=config.yfinance_period,
@@ -630,6 +686,48 @@ def _add_shared_model_args(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_SETTINGS.experiment.max_calibration_exposure,
         help="Optional cap on calibration-period exposure during threshold selection",
     )
+    parser.add_argument(
+        "--threshold-selection-objective",
+        default=DEFAULT_SETTINGS.experiment.threshold_selection_objective_name,
+        choices=["legacy", "soft_risk_adjusted"],
+        help="Objective used to rank calibration threshold candidates",
+    )
+    parser.add_argument(
+        "--calibration-return-weight",
+        type=float,
+        default=DEFAULT_SETTINGS.experiment.calibration_return_weight,
+        help="Soft-objective weight for total return",
+    )
+    parser.add_argument(
+        "--calibration-exposure-target",
+        type=float,
+        default=DEFAULT_SETTINGS.experiment.calibration_exposure_target,
+        help="Soft-objective exposure target before penalties apply",
+    )
+    parser.add_argument(
+        "--calibration-exposure-penalty",
+        type=float,
+        default=DEFAULT_SETTINGS.experiment.calibration_exposure_penalty,
+        help="Soft-objective penalty weight for exposure above target",
+    )
+    parser.add_argument(
+        "--calibration-turnover-penalty",
+        type=float,
+        default=DEFAULT_SETTINGS.experiment.calibration_turnover_penalty,
+        help="Soft-objective penalty weight for turnover",
+    )
+    parser.add_argument(
+        "--calibration-drawdown-target",
+        type=float,
+        default=DEFAULT_SETTINGS.experiment.calibration_drawdown_target,
+        help="Soft-objective drawdown target before penalties apply",
+    )
+    parser.add_argument(
+        "--calibration-drawdown-penalty",
+        type=float,
+        default=DEFAULT_SETTINGS.experiment.calibration_drawdown_penalty,
+        help="Soft-objective penalty weight for drawdown above target",
+    )
     parser.add_argument("--backend", default=DEFAULT_SETTINGS.model.backend, choices=["auto", "xgboost", "hist_gradient_boosting"])
     parser.add_argument("--threshold", type=float, default=DEFAULT_SETTINGS.backtest.probability_threshold, help="Default probability threshold")
     parser.add_argument("--commission-bps", type=float, default=DEFAULT_SETTINGS.backtest.commission_bps, help="Commission in basis points")
@@ -650,6 +748,13 @@ def _settings_from_args(args: argparse.Namespace) -> ProjectSettings:
         DEFAULT_SETTINGS.experiment,
         probability_calibration_method=args.probability_calibration,
         max_calibration_exposure=args.max_calibration_exposure,
+        threshold_selection_objective_name=args.threshold_selection_objective,
+        calibration_return_weight=args.calibration_return_weight,
+        calibration_exposure_target=args.calibration_exposure_target,
+        calibration_exposure_penalty=args.calibration_exposure_penalty,
+        calibration_turnover_penalty=args.calibration_turnover_penalty,
+        calibration_drawdown_target=args.calibration_drawdown_target,
+        calibration_drawdown_penalty=args.calibration_drawdown_penalty,
     )
     return replace(
         DEFAULT_SETTINGS,
@@ -699,6 +804,13 @@ def _train_config_from_args(args: argparse.Namespace) -> TrainPipelineConfig:
         threshold_policy_name=args.threshold_policy,
         probability_calibration_method=args.probability_calibration,
         max_calibration_exposure=args.max_calibration_exposure,
+        threshold_selection_objective_name=args.threshold_selection_objective,
+        calibration_return_weight=args.calibration_return_weight,
+        calibration_exposure_target=args.calibration_exposure_target,
+        calibration_exposure_penalty=args.calibration_exposure_penalty,
+        calibration_turnover_penalty=args.calibration_turnover_penalty,
+        calibration_drawdown_target=args.calibration_drawdown_target,
+        calibration_drawdown_penalty=args.calibration_drawdown_penalty,
         auto_discover_companion_inputs=True,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
@@ -721,6 +833,13 @@ def _test_config_from_args(args: argparse.Namespace) -> TestPipelineConfig:
         threshold_policy_name=args.threshold_policy,
         probability_calibration_method=args.probability_calibration,
         max_calibration_exposure=args.max_calibration_exposure,
+        threshold_selection_objective_name=args.threshold_selection_objective,
+        calibration_return_weight=args.calibration_return_weight,
+        calibration_exposure_target=args.calibration_exposure_target,
+        calibration_exposure_penalty=args.calibration_exposure_penalty,
+        calibration_turnover_penalty=args.calibration_turnover_penalty,
+        calibration_drawdown_target=args.calibration_drawdown_target,
+        calibration_drawdown_penalty=args.calibration_drawdown_penalty,
         auto_discover_companion_inputs=True,
         fetch_yfinance=args.fetch_yfinance,
         yfinance_period=args.yf_period,
