@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from algotrader.profiles import build_model_profile, list_profile_names
+from algotrader.profiles import build_feature_block, build_model_profile, list_feature_block_names, list_profile_names
 
 
 def test_build_model_profile_from_preset_exposes_blocks_and_requirements() -> None:
@@ -19,3 +19,11 @@ def test_list_profile_names_includes_expected_presets() -> None:
     assert "price_only" in profile_names
     assert "price_plus_regime_plus_trend_state" in profile_names
     assert "price_plus_regime_plus_trend_state_plus_atr_percentile" in profile_names
+
+
+def test_feature_block_registry_exposes_reusable_blocks() -> None:
+    block = build_feature_block("trend_state")
+
+    assert block.name == "trend_state"
+    assert "sma_50_above_sma_200" in block.feature_columns
+    assert "regime" in list_feature_block_names()

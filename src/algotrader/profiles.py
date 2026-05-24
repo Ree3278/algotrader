@@ -68,6 +68,16 @@ PROFILE_PRESETS = {
 }
 
 
+def build_feature_block(name: str) -> FeatureBlock:
+    if name not in FEATURE_BLOCKS:
+        raise ValueError(f"Unknown feature block: {name}")
+    return FEATURE_BLOCKS[name]
+
+
+def list_feature_block_names() -> list[str]:
+    return list(FEATURE_BLOCKS)
+
+
 def build_model_profile(
     *,
     name: str | None = None,
@@ -82,7 +92,7 @@ def build_model_profile(
     missing = [block_name for block_name in resolved_block_names if block_name not in FEATURE_BLOCKS]
     if missing:
         raise ValueError(f"Unknown feature blocks: {missing}")
-    blocks = tuple(FEATURE_BLOCKS[block_name] for block_name in resolved_block_names)
+    blocks = tuple(build_feature_block(block_name) for block_name in resolved_block_names)
     profile_name = name or "custom_" + "_plus_".join(resolved_block_names)
     return ModelProfile(name=profile_name, blocks=blocks)
 

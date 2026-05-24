@@ -23,9 +23,10 @@ from algotrader.ingestion import (
     save_ohlcv_csv,
 )
 from algotrader.labels import TripleBarrierConfig
-from algotrader.profiles import build_model_profile, list_profile_names
+from algotrader.profiles import list_profile_names
 from algotrader.reporting import build_experiment_summary, format_test_terminal_summary, write_experiment_reports
 from algotrader.settings import DEFAULT_SETTINGS, ProjectSettings
+from algotrader.specs import ExperimentSpec, build_experiment_spec, build_experiment_spec_from_dict
 from algotrader.thresholds import list_threshold_policy_names
 from algotrader.training.calibration import (
     ProbabilityCalibrator,
@@ -38,12 +39,7 @@ from algotrader.training.artifacts import (
     save_model_artifact,
     save_training_manifest,
 )
-from algotrader.training.dataset import (
-    REGIME_FEATURE_COLUMNS,
-    SENTIMENT_FEATURE_COLUMNS,
-    TrainingDataset,
-    build_training_dataset,
-)
+from algotrader.training.dataset import TrainingDataset, build_training_dataset
 from algotrader.training.experiment import (
     WalkForwardExperimentConfig,
     WalkForwardExperimentResult,
@@ -62,7 +58,9 @@ class PipelineConfig:
     vix_input_csv: Path | None = None
     sentiment_features_csv: Path | None = None
     feature_columns: list[str] | None = None
+    feature_block_names: tuple[str, ...] | None = None
     profile_name: str = DEFAULT_SETTINGS.profiles.default_profile_name
+    experiment_spec: ExperimentSpec | None = None
     threshold_policy_name: str = DEFAULT_SETTINGS.thresholds.default_policy_name
     probability_calibration_method: str = DEFAULT_SETTINGS.experiment.probability_calibration_method
     max_calibration_exposure: float | None = DEFAULT_SETTINGS.experiment.max_calibration_exposure
@@ -147,9 +145,54 @@ def _default_vix_output_csv() -> Path:
 
 
 def _resolved_experiment_config(config: PipelineConfig) -> WalkForwardExperimentConfig:
-    base_experiment_config = config.experiment_config or config.settings.build_experiment_config()
-    return replace(
-        base_experiment_config,
+    if config.experiment_config is not None:
+        return replace(
+            config.experiment_config,
+            threshold_policy_name=config.threshold_policy_name,
+            probability_calibration_method=config.probability_calibration_method,
+            max_calibration_exposure=config.max_calibration_exposure,
+            threshold_selection_objective_name=config.threshold_selection_objective_name,
+            calibration_return_weight=config.calibration_return_weight,
+            calibration_exposure_target=config.calibration_exposure_target,
+            calibration_exposure_penalty=config.calibration_exposure_penalty,
+            calibration_turnover_penalty=config.calibration_turnover_penalty,
+            calibration_drawdown_target=config.calibration_drawdown_target,
+            calibration_drawdown_penalty=config.calibration_drawdown_penalty,
+        )
+    return _resolved_experiment_spec(config).build_walk_forward_config()
+
+
+def _resolved_label_config(config: PipelineConfig):
+    return _resolved_experiment_spec(config).labeler.config
+
+
+def _resolved_profile(config: PipelineConfig):
+    return _resolved_experiment_spec(config).profile
+
+
+def _resolved_experiment_spec(config: PipelineConfig) -> ExperimentSpec:
+    if config.experiment_spec is not None:
+        return config.experiment_spec
+    if config.feature_block_names is not None:
+        return build_experiment_spec(
+            settings=config.settings,
+            name=config.profile_name,
+            feature_block_names=config.feature_block_names,
+            threshold_policy_name=config.threshold_policy_name,
+            probability_calibration_method=config.probability_calibration_method,
+            max_calibration_exposure=config.max_calibration_exposure,
+            threshold_selection_objective_name=config.threshold_selection_objective_name,
+            calibration_return_weight=config.calibration_return_weight,
+            calibration_exposure_target=config.calibration_exposure_target,
+            calibration_exposure_penalty=config.calibration_exposure_penalty,
+            calibration_turnover_penalty=config.calibration_turnover_penalty,
+            calibration_drawdown_target=config.calibration_drawdown_target,
+            calibration_drawdown_penalty=config.calibration_drawdown_penalty,
+        )
+    return build_experiment_spec(
+        settings=config.settings,
+        name=config.profile_name,
+        profile_name=config.profile_name,
         threshold_policy_name=config.threshold_policy_name,
         probability_calibration_method=config.probability_calibration_method,
         max_calibration_exposure=config.max_calibration_exposure,
@@ -161,14 +204,6 @@ def _resolved_experiment_config(config: PipelineConfig) -> WalkForwardExperiment
         calibration_drawdown_target=config.calibration_drawdown_target,
         calibration_drawdown_penalty=config.calibration_drawdown_penalty,
     )
-
-
-def _resolved_label_config(config: PipelineConfig):
-    return config.settings.build_label_config()
-
-
-def _resolved_profile(config: PipelineConfig):
-    return build_model_profile(name=config.profile_name)
 
 
 def _resolve_vix_input_csv(config: PipelineConfig) -> Path | None:
@@ -258,10 +293,10 @@ def _build_dataset(
     sentiment_frame: pd.DataFrame | None = None,
     label_config: TripleBarrierConfig | None = None,
 ) -> TrainingDataset:
-    profile = _resolved_profile(config)
-    selected_feature_columns = config.feature_columns or profile.feature_columns
-    requires_vix = any(column in REGIME_FEATURE_COLUMNS for column in selected_feature_columns)
-    requires_sentiment = any(column in SENTIMENT_FEATURE_COLUMNS for column in selected_feature_columns)
+    spec = _resolved_experiment_spec(config)
+    selected_feature_columns = config.feature_columns or spec.feature_columns
+    requires_vix = spec.requires_vix
+    requires_sentiment = spec.requires_sentiment
     if requires_vix and vix_frame is None:
         raise ValueError(f"Profile '{profile.name}' requires VIX input, but no VIX data was available")
     if requires_sentiment and sentiment_frame is None:
@@ -284,6 +319,7 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
     price_frame, vix_frame, sentiment_frame = _load_or_fetch_frames(config)
     dataset = _build_dataset(config, price_frame, vix_frame=vix_frame, sentiment_frame=sentiment_frame)
     experiment_config = _resolved_experiment_config(config)
+    experiment_spec = _resolved_experiment_spec(config)
 
     config.model_dir.mkdir(parents=True, exist_ok=True)
     fold_records: list[dict[str, Any]] = []
@@ -387,9 +423,11 @@ def run_training_pipeline(config: TrainPipelineConfig) -> TrainingRunResult:
         "symbol": config.symbol,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "dataset_rows": int(len(dataset.data)),
+        "experiment_name": experiment_spec.name,
         "feature_columns": dataset.feature_columns,
-        "profile_name": config.profile_name,
-        "profile_blocks": _resolved_profile(config).block_names,
+        "profile_name": experiment_spec.profile_name,
+        "profile_blocks": experiment_spec.profile_blocks,
+        "experiment_spec": experiment_spec.to_dict(),
         "threshold_policy_name": experiment_config.threshold_policy_name,
         "probability_calibration_method": experiment_config.probability_calibration_method,
         "max_calibration_exposure": experiment_config.max_calibration_exposure,
@@ -429,8 +467,12 @@ def run_test_pipeline(config: TestPipelineConfig) -> TestRunResult:
 
     price_frame, vix_frame, sentiment_frame = _load_or_fetch_frames(config)
     manifest, fold_manifest = load_training_manifest(config.model_dir)
+    manifest_experiment_spec = None
+    if manifest.get("experiment_spec") is not None:
+        manifest_experiment_spec = build_experiment_spec_from_dict(manifest["experiment_spec"])
     dataset_config = replace(
         config,
+        experiment_spec=manifest_experiment_spec,
         profile_name=manifest.get("profile_name", config.profile_name),
         feature_columns=manifest.get("feature_columns"),
         threshold_policy_name=manifest.get("threshold_policy_name", config.threshold_policy_name),
@@ -605,7 +647,9 @@ def run_pipeline(config: TestPipelineConfig) -> TestRunResult:
         vix_input_csv=config.vix_input_csv,
         sentiment_features_csv=config.sentiment_features_csv,
         feature_columns=config.feature_columns,
+        feature_block_names=config.feature_block_names,
         profile_name=config.profile_name,
+        experiment_spec=config.experiment_spec,
         threshold_policy_name=config.threshold_policy_name,
         probability_calibration_method=config.probability_calibration_method,
         max_calibration_exposure=config.max_calibration_exposure,

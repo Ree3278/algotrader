@@ -19,67 +19,72 @@ from algotrader.pipeline import (
     run_pipeline,
 )
 from algotrader.settings import DEFAULT_SETTINGS
-from algotrader.profiles import build_model_profile
 from algotrader.reporting import format_ablation_results_table, to_json_safe
+from algotrader.specs import ExperimentSpec, build_experiment_spec
 
 
 @dataclass(frozen=True)
 class AblationVariant:
     name: str
-    profile_name: str
-    threshold_policy_name: str = DEFAULT_SETTINGS.thresholds.default_policy_name
-    probability_calibration_method: str = DEFAULT_SETTINGS.experiment.probability_calibration_method
-    max_calibration_exposure: float | None = DEFAULT_SETTINGS.experiment.max_calibration_exposure
-    threshold_selection_objective_name: str = DEFAULT_SETTINGS.experiment.threshold_selection_objective_name
-    calibration_return_weight: float = DEFAULT_SETTINGS.experiment.calibration_return_weight
-    calibration_exposure_target: float | None = DEFAULT_SETTINGS.experiment.calibration_exposure_target
-    calibration_exposure_penalty: float = DEFAULT_SETTINGS.experiment.calibration_exposure_penalty
-    calibration_turnover_penalty: float = DEFAULT_SETTINGS.experiment.calibration_turnover_penalty
-    calibration_drawdown_target: float | None = DEFAULT_SETTINGS.experiment.calibration_drawdown_target
-    calibration_drawdown_penalty: float = DEFAULT_SETTINGS.experiment.calibration_drawdown_penalty
+    experiment_spec: ExperimentSpec
+
+
+def _ablation_spec(
+    name: str,
+    *,
+    profile_name: str,
+    threshold_policy_name: str = DEFAULT_SETTINGS.thresholds.default_policy_name,
+    probability_calibration_method: str = DEFAULT_SETTINGS.experiment.probability_calibration_method,
+    max_calibration_exposure: float | None = DEFAULT_SETTINGS.experiment.max_calibration_exposure,
+    threshold_selection_objective_name: str = DEFAULT_SETTINGS.experiment.threshold_selection_objective_name,
+    calibration_return_weight: float | None = None,
+    calibration_exposure_target: float | None = None,
+    calibration_exposure_penalty: float | None = None,
+    calibration_turnover_penalty: float | None = None,
+    calibration_drawdown_target: float | None = None,
+    calibration_drawdown_penalty: float | None = None,
+) -> ExperimentSpec:
+    return build_experiment_spec(
+        settings=DEFAULT_SETTINGS,
+        name=name,
+        profile_name=profile_name,
+        threshold_policy_name=threshold_policy_name,
+        probability_calibration_method=probability_calibration_method,
+        max_calibration_exposure=max_calibration_exposure,
+        threshold_selection_objective_name=threshold_selection_objective_name,
+        calibration_return_weight=calibration_return_weight,
+        calibration_exposure_target=calibration_exposure_target,
+        calibration_exposure_penalty=calibration_exposure_penalty,
+        calibration_turnover_penalty=calibration_turnover_penalty,
+        calibration_drawdown_target=calibration_drawdown_target,
+        calibration_drawdown_penalty=calibration_drawdown_penalty,
+    )
 
 
 ABLATION_VARIANTS = (
-    # AblationVariant(name="price_plus_regime_plus_trend_state", profile_name="price_plus_regime_plus_trend_state"),
     AblationVariant(
         name="price_plus_regime_plus_trend_state_plus_regime_thresholding",
-        profile_name="price_plus_regime_plus_trend_state",
-        threshold_policy_name="trend_regime",
+        experiment_spec=_ablation_spec(
+            name="price_plus_regime_plus_trend_state_plus_regime_thresholding",
+            profile_name="price_plus_regime_plus_trend_state",
+            threshold_policy_name="trend_regime",
+        ),
     ),
-    # AblationVariant(
-    #     name="price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_platt",
-    #     profile_name="price_plus_regime_plus_trend_state",
-    #     threshold_policy_name="trend_regime",
-    #     probability_calibration_method="platt",
-    # ),
-    # AblationVariant(
-    #     name="price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_exposure_cap",
-    #     profile_name="price_plus_regime_plus_trend_state",
-    #     threshold_policy_name="trend_regime",
-    #     max_calibration_exposure=0.70,
-    # ),
     AblationVariant(
         name="price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_soft_objective",
-        profile_name="price_plus_regime_plus_trend_state",
-        threshold_policy_name="trend_regime",
-        threshold_selection_objective_name="soft_risk_adjusted",
-        calibration_return_weight=1.0,
-        calibration_exposure_target=0.0,
-        calibration_exposure_penalty=100.0,
-        calibration_turnover_penalty=0.025,
-        calibration_drawdown_target=0.0,
-        calibration_drawdown_penalty= 4.0,
+        experiment_spec=_ablation_spec(
+            name="price_plus_regime_plus_trend_state_plus_regime_thresholding_plus_soft_objective",
+            profile_name="price_plus_regime_plus_trend_state",
+            threshold_policy_name="trend_regime",
+            threshold_selection_objective_name="soft_risk_adjusted",
+            calibration_return_weight=1.0,
+            calibration_exposure_target=0.0,
+            calibration_exposure_penalty=100.0,
+            calibration_turnover_penalty=0.025,
+            calibration_drawdown_target=0.0,
+            calibration_drawdown_penalty=4.0,
+        ),
     ),
-    # AblationVariant(
-    #     name="price_plus_regime_plus_trend_state_plus_constrained_regime_thresholding",
-    #     profile_name="price_plus_regime_plus_trend_state",
-    #     threshold_policy_name="trend_regime_constrained",
-    # ),
-    # AblationVariant(
-    #     name="price_plus_regime_plus_trend_state_plus_atr_percentile_plus_regime_thresholding",
-    #     profile_name="price_plus_regime_plus_trend_state_plus_atr_percentile",
-    #     threshold_policy_name="trend_regime",
-    # ),
 )
 
 
@@ -133,29 +138,30 @@ def run_feature_ablation(
 
     rows: list[dict[str, object]] = []
     for variant in ABLATION_VARIANTS:
-        profile = build_model_profile(name=variant.profile_name)
-        if profile.requires_vix and local_base_config.vix_input_csv is None:
+        spec = variant.experiment_spec
+        if spec.requires_vix and local_base_config.vix_input_csv is None:
             raise ValueError("VIX input is required for regime ablation variants")
-        if profile.requires_sentiment and local_base_config.sentiment_features_csv is None:
+        if spec.requires_sentiment and local_base_config.sentiment_features_csv is None:
             raise ValueError("Sentiment input is required for sentiment ablation variant")
 
         run_root = destination / "runs" / variant.name
         run_config = replace(
             local_base_config,
-            vix_input_csv=local_base_config.vix_input_csv if profile.requires_vix else None,
-            sentiment_features_csv=local_base_config.sentiment_features_csv if profile.requires_sentiment else None,
-            profile_name=profile.name,
-            threshold_policy_name=variant.threshold_policy_name,
-            probability_calibration_method=variant.probability_calibration_method,
-            max_calibration_exposure=variant.max_calibration_exposure,
-            threshold_selection_objective_name=variant.threshold_selection_objective_name,
-            calibration_return_weight=variant.calibration_return_weight,
-            calibration_exposure_target=variant.calibration_exposure_target,
-            calibration_exposure_penalty=variant.calibration_exposure_penalty,
-            calibration_turnover_penalty=variant.calibration_turnover_penalty,
-            calibration_drawdown_target=variant.calibration_drawdown_target,
-            calibration_drawdown_penalty=variant.calibration_drawdown_penalty,
-            feature_columns=profile.feature_columns,
+            vix_input_csv=local_base_config.vix_input_csv if spec.requires_vix else None,
+            sentiment_features_csv=local_base_config.sentiment_features_csv if spec.requires_sentiment else None,
+            profile_name=spec.profile_name,
+            experiment_spec=spec,
+            threshold_policy_name=spec.decision_policy.threshold_policy_name,
+            probability_calibration_method=spec.decision_policy.probability_calibration_method,
+            max_calibration_exposure=spec.decision_policy.max_calibration_exposure,
+            threshold_selection_objective_name=spec.decision_policy.threshold_selection_objective_name,
+            calibration_return_weight=spec.decision_policy.calibration_return_weight,
+            calibration_exposure_target=spec.decision_policy.calibration_exposure_target,
+            calibration_exposure_penalty=spec.decision_policy.calibration_exposure_penalty,
+            calibration_turnover_penalty=spec.decision_policy.calibration_turnover_penalty,
+            calibration_drawdown_target=spec.decision_policy.calibration_drawdown_target,
+            calibration_drawdown_penalty=spec.decision_policy.calibration_drawdown_penalty,
+            feature_columns=spec.feature_columns,
             auto_discover_companion_inputs=False,
             model_dir=run_root / "models",
             output_dir=run_root / "reports",

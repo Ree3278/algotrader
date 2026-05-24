@@ -146,6 +146,7 @@ def test_train_then_test_pipeline_from_local_csv_writes_artifacts(tmp_path) -> N
         train_result.manifest["threshold_selection_objective_name"]
         == DEFAULT_SETTINGS.experiment.threshold_selection_objective_name
     )
+    assert train_result.manifest["experiment_spec"]["profile"]["block_names"] == ["price_only", "regime", "trend_state"]
     assert train_result.manifest["label_config"]["max_holding_bars"] == DEFAULT_SETTINGS.labels.max_holding_bars
     assert train_result.manifest["label_config"]["profit_target_atr"] == DEFAULT_SETTINGS.labels.profit_target_atr
     assert train_result.manifest["label_config"]["stop_loss_atr"] == DEFAULT_SETTINGS.labels.stop_loss_atr

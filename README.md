@@ -30,6 +30,7 @@ uv run pytest
 - optional VIX regime feature via local CSV or automatic `^VIX` fetch
 - optional FinBERT-based sentiment feature layer
 - centralized defaults in `src/algotrader/settings.py`
+- reusable experiment composition in `src/algotrader/specs.py`
 
 ## Settings
 
@@ -103,6 +104,18 @@ Preset profiles:
 - `price_plus_regime_plus_sentiment`
 
 The CLI uses `--profile` to select one of these presets. If you do not pass `--profile`, the default is `price_plus_regime_plus_trend_state`.
+
+## Experiment Specs
+
+Research workflows now compose a full `ExperimentSpec` from Lego-style parts in `src/algotrader/specs.py`:
+
+- feature profile
+- labeler
+- model
+- decision policy
+- evaluation config
+
+`train`, `test`, `ablation`, and `holdout` all run through the same experiment-spec layer, so future experiments can reuse the same blocks instead of re-implementing pipeline wiring.
 
 ## Threshold Policies
 
