@@ -17,6 +17,32 @@ uv sync --extra dev --extra research --extra nlp
 uv run pytest
 ```
 
+## Streamlit Demo
+
+The recruiter-facing dashboard entrypoint is `streamlit_app.py`. It reads from the static
+`runtime_data/` bundle so Streamlit Community Cloud can run the demo without API keys,
+database access, or live market downloads.
+
+```bash
+pip install -r requirements.txt
+streamlit run streamlit_app.py
+```
+
+The bundled demo artifacts include:
+
+- `runtime_data/data/spy_daily.csv` and `runtime_data/data/vix_daily.csv`
+- `runtime_data/reports/summary.json`
+- `runtime_data/reports/fold_summaries.csv`
+- `runtime_data/reports/test_predictions.csv`
+- `runtime_data/research/ablation_results.csv`
+- `runtime_data/research/label_sweep_results.csv`
+- `runtime_data/models/latest/manifest.json`
+- `runtime_data/models/latest/fold_manifest.csv`
+- saved fold model and calibrator pickle files under `runtime_data/models/latest/`
+
+For Streamlit Community Cloud, set the app file to `streamlit_app.py` and keep
+`requirements.txt` at the repo root.
+
 ## Current baseline modules
 
 - technical price feature engineering
