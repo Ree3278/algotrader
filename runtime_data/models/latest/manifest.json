@@ -1,0 +1,199 @@
+{
+  "calibration_drawdown_penalty": 0.0,
+  "calibration_drawdown_target": null,
+  "calibration_exposure_penalty": 0.0,
+  "calibration_exposure_target": null,
+  "calibration_return_weight": 0.0,
+  "calibration_turnover_penalty": 0.0,
+  "created_at": "2026-05-24T22:59:31.074338+00:00",
+  "dataset_rows": 8155,
+  "experiment_config": {
+    "backtest_config": {
+      "commission_bps": 1.0,
+      "probability_threshold": 0.55,
+      "slippage_bps": 2.0
+    },
+    "calibration_drawdown_penalty": 0.0,
+    "calibration_drawdown_target": null,
+    "calibration_exposure_penalty": 0.0,
+    "calibration_exposure_target": null,
+    "calibration_fraction": 0.2,
+    "calibration_return_weight": 0.0,
+    "calibration_turnover_penalty": 0.0,
+    "max_calibration_exposure": null,
+    "min_calibration_size": 20,
+    "min_training_size": 30,
+    "model_config": {
+      "backend": "auto",
+      "colsample_bytree": 0.8,
+      "learning_rate": 0.05,
+      "max_depth": 4,
+      "min_child_weight": 1.0,
+      "n_estimators": 200,
+      "random_state": 42,
+      "subsample": 0.8,
+      "use_balanced_sample_weights": true
+    },
+    "probability_calibration_method": "none",
+    "split_config": {
+      "embargo_size": 10,
+      "max_label_horizon": 10,
+      "step_size": 252,
+      "test_size": 252,
+      "train_size": 504
+    },
+    "threshold_grid": [
+      0.4,
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.65,
+      0.7,
+      0.75,
+      0.8
+    ],
+    "threshold_policy_name": "trend_regime",
+    "threshold_selection_objective_name": "legacy"
+  },
+  "experiment_name": "price_plus_regime_plus_trend_state_plus_regime_thresholding",
+  "experiment_spec": {
+    "decision_policy": {
+      "calibration_drawdown_penalty": 0.0,
+      "calibration_drawdown_target": null,
+      "calibration_exposure_penalty": 0.0,
+      "calibration_exposure_target": null,
+      "calibration_return_weight": 0.0,
+      "calibration_turnover_penalty": 0.0,
+      "max_calibration_exposure": null,
+      "probability_calibration_method": "none",
+      "threshold_policy_name": "trend_regime",
+      "threshold_selection_objective_name": "legacy"
+    },
+    "evaluation": {
+      "backtest_config": {
+        "commission_bps": 1.0,
+        "probability_threshold": 0.55,
+        "slippage_bps": 2.0
+      },
+      "calibration_fraction": 0.2,
+      "holdout_size": 252,
+      "min_calibration_size": 20,
+      "min_training_size": 30,
+      "name": "walk_forward",
+      "split_config": {
+        "embargo_size": 10,
+        "max_label_horizon": 10,
+        "step_size": 252,
+        "test_size": 252,
+        "train_size": 504
+      },
+      "threshold_grid": [
+        0.4,
+        0.45,
+        0.5,
+        0.55,
+        0.6,
+        0.65,
+        0.7,
+        0.75,
+        0.8
+      ]
+    },
+    "labeler": {
+      "config": {
+        "intrabar_tie_break": "stop",
+        "max_holding_bars": 10,
+        "profit_target_atr": 1.25,
+        "stop_loss_atr": 1.25,
+        "timeout_return_threshold": 0.0
+      },
+      "name": "triple_barrier"
+    },
+    "model": {
+      "config": {
+        "backend": "auto",
+        "colsample_bytree": 0.8,
+        "learning_rate": 0.05,
+        "max_depth": 4,
+        "min_child_weight": 1.0,
+        "n_estimators": 200,
+        "random_state": 42,
+        "subsample": 0.8,
+        "use_balanced_sample_weights": true
+      },
+      "name": "xgboost_classifier"
+    },
+    "name": "price_plus_regime_plus_trend_state_plus_regime_thresholding",
+    "profile": {
+      "block_names": [
+        "price_only",
+        "regime",
+        "trend_state"
+      ],
+      "feature_columns": [
+        "return_1d",
+        "return_5d",
+        "volatility_20d",
+        "price_above_sma_200",
+        "ATR_14",
+        "RSI_14",
+        "MACD_line",
+        "MACD_signal",
+        "MACD_hist",
+        "BB_upper",
+        "BB_lower",
+        "BB_pct_b",
+        "volume_zscore_20d",
+        "vix_zscore_60d",
+        "price_to_sma_200",
+        "sma_200_slope_20d",
+        "sma_50_above_sma_200"
+      ],
+      "name": "price_plus_regime_plus_trend_state",
+      "requires_sentiment": false,
+      "requires_vix": true
+    }
+  },
+  "feature_columns": [
+    "return_1d",
+    "return_5d",
+    "volatility_20d",
+    "price_above_sma_200",
+    "ATR_14",
+    "RSI_14",
+    "MACD_line",
+    "MACD_signal",
+    "MACD_hist",
+    "BB_upper",
+    "BB_lower",
+    "BB_pct_b",
+    "volume_zscore_20d",
+    "vix_zscore_60d",
+    "price_to_sma_200",
+    "sma_200_slope_20d",
+    "sma_50_above_sma_200"
+  ],
+  "input_csv": "data/interim/spy_daily.csv",
+  "label_config": {
+    "intrabar_tie_break": "stop",
+    "max_holding_bars": 10,
+    "profit_target_atr": 1.25,
+    "stop_loss_atr": 1.25,
+    "timeout_return_threshold": 0.0
+  },
+  "max_calibration_exposure": null,
+  "probability_calibration_method": "none",
+  "profile_blocks": [
+    "price_only",
+    "regime",
+    "trend_state"
+  ],
+  "profile_name": "price_plus_regime_plus_trend_state",
+  "sentiment_features_csv": null,
+  "symbol": "SPY",
+  "target_column": "label",
+  "threshold_policy_name": "trend_regime",
+  "threshold_selection_objective_name": "legacy",
+  "vix_input_csv": null
+}

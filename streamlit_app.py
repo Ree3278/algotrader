@@ -104,8 +104,39 @@ def compact_date(value: object) -> str:
     return timestamp.strftime("%Y-%m-%d")
 
 
+def required_runtime_paths() -> list[Path]:
+    return [
+        REPORTS_DIR / "summary.json",
+        REPORTS_DIR / "fold_summaries.csv",
+        REPORTS_DIR / "test_predictions.csv",
+        DATA_DIR / "spy_daily.csv",
+        DATA_DIR / "vix_daily.csv",
+        MODELS_DIR / "manifest.json",
+        MODELS_DIR / "fold_manifest.csv",
+        RESEARCH_DIR / "ablation_results.csv",
+        RESEARCH_DIR / "label_sweep_results.csv",
+    ]
+
+
+def stop_if_runtime_missing() -> None:
+    missing = [path for path in required_runtime_paths() if not path.exists()]
+    if not missing:
+        return
+
+    missing_lines = "\n".join(f"- `{path.relative_to(ROOT)}`" for path in missing)
+    st.error(
+        "The Streamlit runtime data bundle is missing from this deployment.\n\n"
+        f"{missing_lines}\n\n"
+        "Commit and push the `runtime_data/` directory with the app. These files are static "
+        "demo artifacts, so the cloud app should not fetch market data or retrain models at startup."
+    )
+    st.stop()
+
+
 @st.cache_data(show_spinner=False)
 def load_runtime() -> dict[str, object]:
+    stop_if_runtime_missing()
+
     summary = json.loads((REPORTS_DIR / "summary.json").read_text(encoding="utf-8"))
     manifest = json.loads((MODELS_DIR / "manifest.json").read_text(encoding="utf-8"))
 

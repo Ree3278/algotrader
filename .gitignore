@@ -10,12 +10,18 @@ wheels/
 
 # Virtual environments
 .venv
+.uv-cache/
 
 # Project outputs
 data/
 reports/
 models/
 notebooks/.ipynb_checkpoints/
+
+# Static bundle required by Streamlit Community Cloud
+!runtime_data/
+!runtime_data/**
+runtime_data/.DS_Store
 
 # Local settings
 .env
